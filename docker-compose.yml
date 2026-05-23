@@ -12,10 +12,6 @@ networks:
     # Named explicitly so the mailcow override can reference it as external.
     name: platform
     driver: bridge
-  mailcow-network:
-    # Created by the included mailcow compose. Traefik joins it so it can
-    # reach nginx-mailcow via container name on port 80.
-    external: true
 
 volumes:
   db_data:
@@ -28,8 +24,11 @@ services:
 
   # ── Traefik ─────────────────────────────────────────────────────────────
   traefik:
-    image: traefik:v3.1
+    image: traefik:latest
     restart: unless-stopped
+    environment:
+      # Docker 27+ requires API >= 1.40; Traefik's client defaults to 1.24.
+      DOCKER_API_VERSION: "1.41"
     ports:
       - "80:80"
       - "443:443"
@@ -90,6 +89,8 @@ services:
       - "traefik.http.routers.api.rule=Host(`portal.${PRIMARY_DOMAIN}`) && PathPrefix(`/api`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.middlewares=api-strip"
+      - "traefik.http.middlewares.api-strip.stripprefix.prefixes=/api"
       - "traefik.http.services.api.loadbalancer.server.port=3001"
 
   # ── Platform Portal (Next.js) ────────────────────────────────────────────

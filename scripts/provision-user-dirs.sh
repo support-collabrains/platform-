@@ -15,12 +15,18 @@ for u in d['results']:
     print(u['username'])
 ")
 
+BASE="/srv/platform/data/paperless"
+
 for user in $users; do
-  dir="${CONSUME_DIR}/${user}"
-  if [[ ! -d "$dir" ]]; then
-    mkdir -p "$dir"
-    echo "Created: $dir"
-  else
-    echo "Exists:  $dir"
-  fi
+  for subdir in consume export; do
+    dir="${BASE}/${subdir}/${user}"
+    if [[ ! -d "$dir" ]]; then
+      mkdir -p "$dir"
+      echo "Created: $dir"
+    else
+      echo "Exists:  $dir"
+    fi
+  done
 done
+
+chown -R 1000:1000 "${BASE}/consume" "${BASE}/export" 2>/dev/null || true

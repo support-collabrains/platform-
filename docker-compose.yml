@@ -19,6 +19,8 @@ volumes:
   authentik_media:
   authentik_certs:
   traefik_certs:
+  paperless_data:
+  paperless_media:
 
 services:
 
@@ -152,6 +154,9 @@ services:
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?required}
       AUTHENTIK_BOOTSTRAP_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL required}
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required}
+    ports:
+      - "389:3389"
+      - "636:6636"
     volumes:
       - authentik_media:/media
       - authentik_certs:/certs
@@ -182,3 +187,67 @@ services:
       - authentik_certs:/certs
     depends_on: [authentik-server]
     networks: [platform]
+
+  # ── Paperless-ngx ────────────────────────────────────────────────────────
+  paperless-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      paperless-redis:
+        condition: service_started
+    environment:
+      PAPERLESS_REDIS: redis://paperless-redis:6379
+      PAPERLESS_DBENGINE: postgresql
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBUSER: platform
+      PAPERLESS_DBPASS: ${DB_PASSWORD}
+      PAPERLESS_URL: https://docs.${PRIMARY_DOMAIN}
+      PAPERLESS_SECRET_KEY: ${PAPERLESS_SECRET_KEY}
+      PAPERLESS_ADMIN_USER: admin
+      PAPERLESS_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      PAPERLESS_ADMIN_MAIL: ${ADMIN_EMAIL}
+      PAPERLESS_TIME_ZONE: ${TIMEZONE:-UTC}
+      PAPERLESS_OCR_LANGUAGE: eng
+      PAPERLESS_OCR_MODE: skip
+      PAPERLESS_CONSUMER_RECURSIVE: "true"
+      PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "true"
+      PAPERLESS_FILENAME_FORMAT: "{{ owner_username }}/{{ created_year }}/{{ title }}"
+      USERMAP_UID: "1000"
+      USERMAP_GID: "1000"
+      # Authentik OIDC SSO
+      PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
+      PAPERLESS_SOCIALACCOUNT_PROVIDERS: >
+        {"openid_connect": {"APPS": [{"provider_id": "paperless-authentik", "name": "Authentik",
+        "client_id": "${PAPERLESS_OIDC_CLIENT_ID}", "secret": "${PAPERLESS_OIDC_CLIENT_SECRET}",
+        "settings": {"server_url": "https://auth.${PRIMARY_DOMAIN}/application/o/paperless-ngx/.well-known/openid-configuration",
+        "token_auth_method": "client_secret_basic", "access_token_url": "https://auth.${PRIMARY_DOMAIN}/application/o/token/",
+        "authorize_url": "https://auth.${PRIMARY_DOMAIN}/application/o/authorize/",
+        "profile_url": "https://auth.${PRIMARY_DOMAIN}/application/o/userinfo/"}}]}}
+      PAPERLESS_ACCOUNT_DEFAULT_HTTP_PROTOCOL: https
+      PAPERLESS_SOCIAL_AUTO_SIGNUP: "true"
+      PAPERLESS_DISABLE_REGULAR_LOGIN: "true"
+      PAPERLESS_CSRF_TRUSTED_ORIGINS: "https://docs.${PRIMARY_DOMAIN}"
+      PAPERLESS_SOCIAL_ACCOUNT_ALLOW_REGISTRATION: "true"
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      - ./data/paperless/export:/usr/src/paperless/export
+      - ./data/paperless/consume:/usr/src/paperless/consume
+    networks:
+      - platform
+      - mailcow-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.paperless.rule=Host(`docs.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.paperless.entrypoints=websecure"
+      - "traefik.http.routers.paperless.tls.certresolver=letsencrypt"
+      - "traefik.http.services.paperless.loadbalancer.server.port=8000"

@@ -1,0 +1,177 @@
+# Production-only. No mock services, no dev shortcuts.
+# Requires Docker Compose CLI v2.20+ for include: support.
+
+include:
+  - path: ./core/mailcow/docker-compose.yml
+    # Merges Traefik labels + platform network attachment onto nginx-mailcow.
+    merge:
+      - ./core/mailcow/traefik.override.yml
+
+networks:
+  platform:
+    # Named explicitly so the mailcow override can reference it as external.
+    name: platform
+    driver: bridge
+  mailcow-network:
+    # Created by the included mailcow compose. Traefik joins it so it can
+    # reach nginx-mailcow via container name on port 80.
+    external: true
+
+volumes:
+  db_data:
+  authentik_data:
+  authentik_media:
+  authentik_certs:
+  traefik_certs:
+
+services:
+
+  # ── Traefik ─────────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik:/etc/traefik:ro
+      - traefik_certs:/letsencrypt
+    networks:
+      - platform
+      # Join mailcow's network so Traefik can reach nginx-mailcow directly.
+      # The network name matches what mailcow-dockerized creates by default.
+      - mailcow-network
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Platform API (NestJS) ────────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://platform:${DB_PASSWORD}@db:5432/platform
+      PORTAL_ORIGIN: https://portal.${PRIMARY_DOMAIN:?PRIMARY_DOMAIN required}
+      AUTHENTIK_URL: http://authentik-server:9000
+      MAILCOW_URL: http://nginx-mailcow
+      MAILCOW_API_KEY: ${MAILCOW_API_KEY:-}
+      TRAEFIK_CONFIG_DIR: /etc/traefik-dynamic
+    volumes:
+      - ./config/traefik:/etc/traefik-dynamic
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - platform
+      # Needs mailcow-network to call Mailcow's API during provisioning.
+      - mailcow-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.api.rule=Host(`portal.${PRIMARY_DOMAIN}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.api.loadbalancer.server.port=3001"
+
+  # ── Platform Portal (Next.js) ────────────────────────────────────────────
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: https://portal.${PRIMARY_DOMAIN}/api
+    depends_on: [api]
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.portal.rule=Host(`portal.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.portal.entrypoints=websecure"
+      - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
+      - "traefik.http.services.portal.loadbalancer.server.port=3000"
+
+  # ── Authentik ────────────────────────────────────────────────────────────
+  postgresql-authentik:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD:?AUTHENTIK_DB_PASSWORD required}
+    volumes:
+      - authentik_data:/var/lib/postgresql/data
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-authentik:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.6
+    restart: unless-stopped
+    command: server
+    environment:
+      AUTHENTIK_REDIS__HOST: redis-authentik
+      AUTHENTIK_POSTGRESQL__HOST: postgresql-authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY required}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN:?required}
+      AUTHENTIK_BOOTSTRAP_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL required}
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD required}
+    volumes:
+      - authentik_media:/media
+      - authentik_certs:/certs
+    depends_on:
+      postgresql-authentik:
+        condition: service_healthy
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authentik.rule=Host(`auth.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.authentik.entrypoints=websecure"
+      - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.6
+    restart: unless-stopped
+    command: worker
+    environment:
+      AUTHENTIK_REDIS__HOST: redis-authentik
+      AUTHENTIK_POSTGRESQL__HOST: postgresql-authentik
+      AUTHENTIK_POSTGRESQL__USER: authentik
+      AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      AUTHENTIK_POSTGRESQL__NAME: authentik
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+    volumes:
+      - authentik_media:/media
+      - authentik_certs:/certs
+    depends_on: [authentik-server]
+    networks: [platform]

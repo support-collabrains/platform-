@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# Mailcow clone (installed at runtime by install.sh)
+core/mailcow/
+
+# Traefik runtime config & certs
+config/traefik/
+data/
+backups/
+
+# Misc
+*.log
+.DS_Store

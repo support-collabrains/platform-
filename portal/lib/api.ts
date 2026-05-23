@@ -1,4 +1,9 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+function getApiBase() {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== 'undefined') return `${window.location.origin}/api`;
+  return 'http://localhost:3001';
+}
+const API_BASE = getApiBase();
 
 export interface BootstrapConfig {
   primaryDomain?: string;

@@ -1,9 +1,18 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
+export interface BootstrapConfig {
+  primaryDomain?: string;
+  mailDomain?: string;
+  adminEmail?: string;
+  hostname?: string;
+  timezone?: string;
+}
+
 export interface BootstrapStateResponse {
   state: BootstrapState;
   isReady: boolean;
   log: BootstrapLogEntry[];
+  config: BootstrapConfig | null;
 }
 
 export type BootstrapState =

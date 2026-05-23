@@ -29,6 +29,7 @@ export class BootstrapController {
       state: this.bootstrapService.getState(),
       isReady: this.bootstrapService.isReady(),
       log: this.bootstrapService.getEventLog(),
+      config: this.bootstrapService.getConfig(),
     };
   }
 

@@ -71,9 +71,15 @@ services:
       DATABASE_URL: postgresql://platform:${DB_PASSWORD}@db:5432/platform
       PORTAL_ORIGIN: https://portal.${PRIMARY_DOMAIN:?PRIMARY_DOMAIN required}
       AUTHENTIK_URL: http://authentik-server:9000
-      MAILCOW_URL: http://nginx-mailcow
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+      MAILCOW_URL: http://nginx-mailcow:8080
       MAILCOW_API_KEY: ${MAILCOW_API_KEY:-}
       TRAEFIK_CONFIG_DIR: /etc/traefik-dynamic
+      PRIMARY_DOMAIN: ${PRIMARY_DOMAIN}
+      MAIL_DOMAIN: ${MAIL_DOMAIN}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      TIMEZONE: ${TIMEZONE:-UTC}
     volumes:
       - ./config/traefik:/etc/traefik-dynamic
     depends_on:

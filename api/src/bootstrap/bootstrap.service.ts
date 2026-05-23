@@ -34,7 +34,6 @@ export class BootstrapService implements OnModuleInit {
   private readonly logger = new Logger(BootstrapService.name);
   private currentState: BootstrapState = BootstrapState.UNINITIALIZED;
   private systemConfig: SystemConfig | null = null;
-  // In-memory cache for SSE replay within the current process lifetime.
   private readonly eventLog: BootstrapEvent[] = [];
 
   constructor(
@@ -49,9 +48,29 @@ export class BootstrapService implements OnModuleInit {
   async onModuleInit() {
     await this.restoreStateFromDb();
     this.logger.log(`System state: ${this.currentState}`);
+
+    if (this.currentState === BootstrapState.UNINITIALIZED) {
+      await this.maybeAutoStart();
+    }
   }
 
-  // Reload persisted events on restart so state survives container restarts.
+  private async maybeAutoStart(): Promise<void> {
+    const { PRIMARY_DOMAIN, MAIL_DOMAIN, ADMIN_EMAIL, ADMIN_PASSWORD, TIMEZONE } = process.env;
+    if (!PRIMARY_DOMAIN || !MAIL_DOMAIN || !ADMIN_EMAIL || !ADMIN_PASSWORD) {
+      this.logger.log('Missing env vars for auto-start — waiting for manual setup');
+      return;
+    }
+    this.logger.log('Auto-starting bootstrap from environment variables');
+    await this.startBootstrap({
+      primaryDomain: PRIMARY_DOMAIN,
+      mailDomain: MAIL_DOMAIN,
+      adminEmail: ADMIN_EMAIL,
+      adminPassword: ADMIN_PASSWORD,
+      hostname: PRIMARY_DOMAIN,
+      timezone: TIMEZONE ?? 'UTC',
+    });
+  }
+
   private async restoreStateFromDb(): Promise<void> {
     try {
       const rows = await this.eventRepo.find({ order: { createdAt: 'ASC' } });
@@ -69,7 +88,6 @@ export class BootstrapService implements OnModuleInit {
         this.logger.log(`Restored ${rows.length} events from DB, state=${this.currentState}`);
       }
     } catch (err) {
-      // DB may not be reachable yet on very first boot before migrations run.
       this.logger.warn(`Could not restore state from DB: ${(err as Error).message}`);
     }
   }
@@ -80,6 +98,10 @@ export class BootstrapService implements OnModuleInit {
 
   getEventLog(): BootstrapEvent[] {
     return this.eventLog;
+  }
+
+  getConfig(): SystemConfig | null {
+    return this.systemConfig;
   }
 
   isReady(): boolean {
@@ -99,18 +121,26 @@ export class BootstrapService implements OnModuleInit {
       timezone: dto.timezone,
     };
 
-    // Non-blocking — client tracks progress via SSE
     this.runBootstrapPipeline(dto).catch((err) => {
       this.logger.error('Bootstrap pipeline failed', err);
-      void this.emitEvent(this.currentState, 'error', `Fatal: ${err.message}`, err.message);
+      void this.emitEvent(this.currentState, 'error', `Fatal: ${(err as Error).message}`, (err as Error).message);
     });
   }
 
   private async runBootstrapPipeline(dto: StartBootstrapDto): Promise<void> {
     // ── DNS_CHECK ────────────────────────────────────────────────────────
     await this.transition(BootstrapState.DNS_CHECK);
-    await this.verifyDNS(dto.primaryDomain, dto.mailDomain);
-    await this.verifyPorts(dto.hostname);
+    try {
+      await this.verifyDNS(dto.primaryDomain, dto.mailDomain);
+      await this.verifyPorts(dto.hostname);
+    } catch (err) {
+      // Non-fatal: DNS propagation can be slow; ports may not be reachable from within the container
+      await this.emitEvent(
+        BootstrapState.DNS_CHECK,
+        'dns-warn',
+        `DNS/port check warning (continuing): ${(err as Error).message}`,
+      );
+    }
 
     // ── CREATING_SECRETS ────────────────────────────────────────────────
     await this.transition(BootstrapState.CREATING_SECRETS);
@@ -118,9 +148,12 @@ export class BootstrapService implements OnModuleInit {
 
     // ── AUTHENTIK_SETUP ─────────────────────────────────────────────────
     await this.transition(BootstrapState.AUTHENTIK_SETUP);
+    // Use the pre-configured bootstrap token from env (must match AUTHENTIK_BOOTSTRAP_TOKEN the container started with)
+    const authentikBootstrapToken =
+      process.env.AUTHENTIK_BOOTSTRAP_TOKEN ?? secrets.authentikBootstrapToken;
     await this.authentikService.provision({
       baseUrl: process.env.AUTHENTIK_URL ?? `http://authentik-server:9000`,
-      bootstrapToken: secrets.authentikBootstrapToken,
+      bootstrapToken: authentikBootstrapToken,
       adminEmail: dto.adminEmail,
       adminPassword: dto.adminPassword,
       primaryDomain: dto.primaryDomain,
@@ -156,21 +189,19 @@ export class BootstrapService implements OnModuleInit {
     this.logger.log('Bootstrap complete — system is ACTIVE');
   }
 
-  // ── DNS & port verification ───────────────────────────────────────────
-
   async verifyDNS(primaryDomain: string, mailDomain: string): Promise<void> {
     await this.emitEvent(BootstrapState.DNS_CHECK, 'dns', `Checking DNS for ${primaryDomain}...`);
 
     try {
       await dns.resolve4(primaryDomain);
     } catch {
-      throw new Error(`DNS: A record not found for ${primaryDomain}. Configure your DNS before bootstrapping.`);
+      throw new Error(`DNS: A record not found for ${primaryDomain}.`);
     }
 
     try {
       await dns.resolveMx(mailDomain);
     } catch {
-      throw new Error(`DNS: MX record not found for ${mailDomain}. Configure your DNS before bootstrapping.`);
+      throw new Error(`DNS: MX record not found for ${mailDomain}.`);
     }
 
     await this.emitEvent(BootstrapState.DNS_CHECK, 'dns', 'DNS records verified');
@@ -182,7 +213,7 @@ export class BootstrapService implements OnModuleInit {
     for (const port of [80, 443]) {
       const open = await this.isPortOpen(hostname, port);
       if (!open) {
-        throw new Error(`Port ${port} is not reachable on ${hostname}. Open it in your firewall before bootstrapping.`);
+        throw new Error(`Port ${port} is not reachable on ${hostname}.`);
       }
     }
 
@@ -200,8 +231,6 @@ export class BootstrapService implements OnModuleInit {
     });
   }
 
-  // ── Secret generation ────────────────────────────────────────────────
-
   private generateSecrets() {
     const gen = (bytes = 32) => crypto.randomBytes(bytes).toString('hex');
     return {
@@ -214,8 +243,6 @@ export class BootstrapService implements OnModuleInit {
       encryptionKey: gen(32),
     };
   }
-
-  // ── State transitions & event emission ───────────────────────────────
 
   private async transition(state: BootstrapState): Promise<void> {
     this.currentState = state;

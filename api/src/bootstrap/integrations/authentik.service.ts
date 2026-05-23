@@ -71,6 +71,19 @@ export class AuthentikService {
     return user;
   }
 
+  private async getAuthorizationFlowPk(api: ReturnType<typeof axios.create>): Promise<string> {
+    const { data } = await api.get('/api/v3/flows/instances/', {
+      params: { designation: 'authorization', slug: 'default-provider-authorization-implicit-consent' },
+    });
+    if (data.pagination.count > 0) return data.results[0].pk;
+    // fallback: any authorization flow
+    const { data: any } = await api.get('/api/v3/flows/instances/', {
+      params: { designation: 'authorization' },
+    });
+    if (any.pagination.count > 0) return any.results[0].pk;
+    throw new Error('No authorization flow found in Authentik');
+  }
+
   private async createOIDCProvider(
     api: ReturnType<typeof axios.create>,
     config: AuthentikConfig,
@@ -82,13 +95,15 @@ export class AuthentikService {
       return existing.results[0].pk;
     }
 
+    const authorizationFlow = await this.getAuthorizationFlowPk(api);
+
     const { data: provider } = await api.post('/api/v3/providers/oauth2/', {
       name: 'portal-oidc',
+      authorization_flow: authorizationFlow,
       client_id: config.oauthClientId,
       client_secret: config.oauthClientSecret,
       client_type: 'confidential',
       redirect_uris: `https://portal.${config.primaryDomain}/api/auth/callback/authentik`,
-      signing_key: null,
       sub_mode: 'hashed_user_id',
       include_claims_in_id_token: true,
       issuer_mode: 'global',

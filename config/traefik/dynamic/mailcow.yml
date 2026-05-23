@@ -1,0 +1,15 @@
+http:
+  routers:
+    mailcow:
+      rule: "Host(`mail.cbrains.de`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: mailcow-svc
+
+  services:
+    mailcow-svc:
+      loadBalancer:
+        servers:
+          - url: "http://nginx-mailcow:8080"

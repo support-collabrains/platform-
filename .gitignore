@@ -18,8 +18,9 @@ secrets/
 # Mailcow clone (installed at runtime by install.sh)
 core/mailcow/
 
-# Traefik runtime config & certs
-config/traefik/
+# Traefik runtime config & certs (ignore secrets, track static config)
+config/traefik/acme.json
+config/traefik/*.json
 data/
 backups/
 

@@ -107,6 +107,9 @@ providers:
   docker:
     exposedByDefault: false
     network: platform
+  file:
+    directory: /etc/traefik/dynamic
+    watch: true
 
 api:
   dashboard: false
@@ -117,6 +120,31 @@ EOF
   info "traefik.yml written"
 else
   warn "traefik.yml already exists — skipping"
+fi
+
+# ── Traefik dynamic config: mailcow route ────────────────────────────────────
+mkdir -p "$INSTALL_DIR/config/traefik/dynamic"
+MAILCOW_DYNAMIC="$INSTALL_DIR/config/traefik/dynamic/mailcow.yml"
+if [[ ! -f "$MAILCOW_DYNAMIC" ]]; then
+  info "Writing Traefik dynamic mailcow route..."
+  cat > "$MAILCOW_DYNAMIC" <<EOF
+http:
+  routers:
+    mailcow:
+      rule: "Host(\`${MAILCOW_HOSTNAME}\`)"
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: mailcow-svc
+
+  services:
+    mailcow-svc:
+      loadBalancer:
+        servers:
+          - url: "http://nginx-mailcow:8080"
+EOF
+  info "mailcow dynamic route written"
 fi
 
 # ── Mailcow setup ─────────────────────────────────────────────────────────

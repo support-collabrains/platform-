@@ -199,10 +199,10 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=platform"
-      - "traefik.http.routers.mailcow.rule=Host(`mail.${MAILCOW_HOSTNAME}`)"
+      - "traefik.http.routers.mailcow.rule=Host(`${MAILCOW_HOSTNAME}`)"
       - "traefik.http.routers.mailcow.entrypoints=websecure"
       - "traefik.http.routers.mailcow.tls.certresolver=letsencrypt"
-      - "traefik.http.services.mailcow.loadbalancer.server.port=80"
+      - "traefik.http.services.mailcow.loadbalancer.server.port=8080"
 EOF
   info "traefik.override.yml written"
 else

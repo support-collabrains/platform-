@@ -43,4 +43,25 @@ export class AdminService {
     await this.api.delete(`/api/v3/core/users/${pk}/`);
     this.logger.log(`Deleted Authentik user pk=${pk}`);
   }
+
+  async applyBranding(): Promise<void> {
+    const api = this.api;
+    const primaryDomain = this.config.get<string>('PRIMARY_DOMAIN') ?? '';
+
+    const { data: brandData } = await api.get('/api/v3/core/brands/');
+    const brand = brandData.results?.[0] as { brand_uuid: string } | undefined;
+    if (brand) {
+      await api.patch(`/api/v3/core/brands/${brand.brand_uuid}/`, {
+        branding_title: 'CollaBrains',
+        branding_logo: `https://portal.${primaryDomain}/logo.svg`,
+      });
+    }
+
+    const { data: stageData } = await api.get('/api/v3/stages/identification/');
+    for (const stage of stageData.results as Array<{ pk: string }>) {
+      await api.patch(`/api/v3/stages/identification/${stage.pk}/`, { submit_label: 'Sign-In' });
+    }
+
+    this.logger.log('Applied CollaBrains branding to live Authentik instance');
+  }
 }

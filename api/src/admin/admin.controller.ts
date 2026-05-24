@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  Patch,
   Post,
   UnauthorizedException,
   Headers,
@@ -48,5 +49,12 @@ export class AdminController {
   async deleteUser(@Headers('authorization') auth: string, @Param('pk') pk: string) {
     this.authorize(auth);
     await this.adminService.deleteUser(Number(pk));
+  }
+
+  @Patch('apply-branding')
+  async applyBranding(@Headers('authorization') auth: string) {
+    this.authorize(auth);
+    await this.adminService.applyBranding();
+    return { ok: true };
   }
 }

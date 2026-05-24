@@ -138,6 +138,20 @@ export class AuthentikService {
     } catch (err) {
       this.logger.warn(`Flow title update failed (non-fatal): ${(err as Error).message}`);
     }
+
+    await this.updateSignInLabel(api);
+  }
+
+  private async updateSignInLabel(api: ReturnType<typeof axios.create>) {
+    try {
+      const { data } = await api.get('/api/v3/stages/identification/');
+      for (const stage of data.results as Array<{ pk: string }>) {
+        await api.patch(`/api/v3/stages/identification/${stage.pk}/`, { submit_label: 'Sign-In' });
+      }
+      this.logger.log('Updated identification stage submit label to Sign-In');
+    } catch (err) {
+      this.logger.warn(`submit_label update failed (non-fatal): ${(err as Error).message}`);
+    }
   }
 
   private async createPortalApplication(

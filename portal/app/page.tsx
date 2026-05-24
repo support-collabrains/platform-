@@ -15,7 +15,7 @@ const STATE_LABEL: Record<string, string> = {
   UNINITIALIZED: 'Initialising…',
   DNS_CHECK: 'Checking DNS & connectivity',
   CREATING_SECRETS: 'Generating secrets',
-  AUTHENTIK_SETUP: 'Configuring authentication (Authentik)',
+  AUTHENTIK_SETUP: 'Configuring authentication',
   MAILCOW_SETUP: 'Configuring mail server (Mailcow)',
   TRAEFIK_CONFIG: 'Configuring routing (Traefik)',
   READY: 'Complete',

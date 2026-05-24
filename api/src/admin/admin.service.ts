@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { ADMIN_GROUP } from '../common/roles.guard';
 
 @Injectable()
 export class AdminService {
@@ -14,13 +15,53 @@ export class AdminService {
     return axios.create({ baseURL: url, headers: { Authorization: `Bearer ${token}` } });
   }
 
-  async listUsers(): Promise<Array<{ pk: number; username: string; name: string; email: string; isActive: boolean }>> {
-    const { data } = await this.api.get('/api/v3/core/users/', {
-      params: { type: 'internal', page_size: 100 },
-    });
-    return (data.results as Array<{ pk: number; username: string; name: string; email: string; is_active: boolean }>)
+  async listUsers(): Promise<Array<{ pk: number; username: string; name: string; email: string; isActive: boolean; role: 'admin' | 'user'; totpEnabled: boolean }>> {
+    const api = this.api;
+    const [usersRes, totpRes] = await Promise.all([
+      api.get('/api/v3/core/users/', { params: { type: 'internal', page_size: 100 } }),
+      api.get('/api/v3/authenticators/totp/', { params: { page_size: 200 } }),
+    ]);
+
+    const totpUserIds = new Set<number>(
+      (totpRes.data.results as Array<{ user: { pk: number } }>).map((t) => t.user.pk),
+    );
+
+    type Raw = { pk: number; username: string; name: string; email: string; is_active: boolean; groups_obj: Array<{ name: string }> };
+    return (usersRes.data.results as Raw[])
       .filter((u) => u.username !== 'AnonymousUser')
-      .map((u) => ({ pk: u.pk, username: u.username, name: u.name, email: u.email, isActive: u.is_active }));
+      .map((u) => ({
+        pk: u.pk,
+        username: u.username,
+        name: u.name,
+        email: u.email,
+        isActive: u.is_active,
+        role: (u.groups_obj ?? []).some((g) => g.name === ADMIN_GROUP) ? ('admin' as const) : ('user' as const),
+        totpEnabled: totpUserIds.has(u.pk),
+      }));
+  }
+
+  async setRole(pk: number, role: 'admin' | 'user'): Promise<void> {
+    const api = this.api;
+
+    // Ensure platform-admins group exists
+    const { data: groupData } = await api.get('/api/v3/core/groups/', {
+      params: { name: ADMIN_GROUP },
+    });
+    let groupPk: string;
+    if ((groupData.count as number) > 0) {
+      groupPk = (groupData.results[0] as { pk: string }).pk;
+    } else {
+      const { data: created } = await api.post('/api/v3/core/groups/', { name: ADMIN_GROUP });
+      groupPk = (created as { pk: string }).pk;
+      this.logger.log(`Created Authentik group: ${ADMIN_GROUP}`);
+    }
+
+    if (role === 'admin') {
+      await api.post(`/api/v3/core/groups/${groupPk}/add_user/`, { pk });
+    } else {
+      await api.post(`/api/v3/core/groups/${groupPk}/remove_user/`, { pk });
+    }
+    this.logger.log(`Set role ${role} for user pk=${pk}`);
   }
 
   async createUser(username: string, name: string, email: string, password: string, phone?: string, phone2?: string): Promise<number> {

@@ -6,6 +6,7 @@ import DocumentsList from './components/DocumentsList';
 import NotificationLog from './components/NotificationLog';
 import PreferencesPanel from './components/PreferencesPanel';
 import TicketsList from './components/TicketsList';
+import ProfilePanel from './components/ProfilePanel';
 
 function SectionSkeleton() {
   return (
@@ -23,6 +24,8 @@ export default async function DashboardPage() {
   const hdrs = await headers();
   const username = hdrs.get('x-authentik-username') ?? 'Gebruiker';
   const uid = hdrs.get('x-authentik-uid') ?? '';
+  const groups = hdrs.get('x-authentik-groups') ?? '';
+  const isAdmin = groups.split(',').map((g) => g.trim()).includes('platform-admins');
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-4">
@@ -34,10 +37,18 @@ export default async function DashboardPage() {
           <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-lg select-none">
             {username[0].toUpperCase()}
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="font-semibold text-slate-800">Welkom, {username}</h1>
             <p className="text-xs text-slate-400">Persoonlijk dashboard</p>
           </div>
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="text-xs font-medium px-2.5 py-1 rounded-full bg-violet-100 text-violet-700 hover:bg-violet-200 transition"
+            >
+              Beheer
+            </Link>
+          )}
         </div>
 
         <Suspense fallback={<SectionSkeleton />}>
@@ -50,6 +61,10 @@ export default async function DashboardPage() {
 
         <Suspense fallback={<SectionSkeleton />}>
           <NotificationLog uid={uid} />
+        </Suspense>
+
+        <Suspense fallback={<SectionSkeleton />}>
+          <ProfilePanel uid={uid} groups={groups} />
         </Suspense>
 
         <Suspense fallback={<SectionSkeleton />}>

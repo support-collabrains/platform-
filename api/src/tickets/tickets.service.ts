@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { SignalTicket } from './ticket.entity';
+import { AuditService } from '../audit/audit.service';
 
 type Lang = 'nl' | 'de' | 'en';
 
@@ -12,6 +13,7 @@ export class TicketsService {
   constructor(
     @InjectRepository(SignalTicket)
     private readonly repo: Repository<SignalTicket>,
+    private readonly audit: AuditService,
   ) {}
 
   // ── Signal command handlers ──────────────────────────────────────────────
@@ -31,7 +33,9 @@ export class TicketsService {
     const seq = await this.nextSeq(ticket.owner);
     ticket.seq = seq;
     ticket.status = 'open';
-    return this.repo.save(ticket);
+    const saved = await this.repo.save(ticket);
+    await this.audit.log(saved.owner, 'ticket.create', saved.id, { title: saved.title, seq: saved.seq });
+    return saved;
   }
 
   async cancelPending(phone: string): Promise<boolean> {
@@ -42,6 +46,7 @@ export class TicketsService {
     if (!ticket) return false;
     ticket.status = 'cancelled';
     await this.repo.save(ticket);
+    await this.audit.log(ticket.owner, 'ticket.cancel', ticket.id, { title: ticket.title });
     return true;
   }
 
@@ -61,7 +66,9 @@ export class TicketsService {
     const ticket = await this.repo.findOne({ where: { owner, seq, status: 'open' } });
     if (!ticket) return null;
     ticket.status = 'done';
-    return this.repo.save(ticket);
+    const saved = await this.repo.save(ticket);
+    await this.audit.log(owner, 'ticket.done', saved.id, { title: saved.title, seq: saved.seq });
+    return saved;
   }
 
   // ── Dashboard API ────────────────────────────────────────────────────────

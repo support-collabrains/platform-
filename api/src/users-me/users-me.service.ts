@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import axios from 'axios';
 import { DocDocument, DocNotification } from '../documents/document.entity';
+import { ADMIN_GROUP } from '../common/roles.guard';
 
 export type UserLanguage = 'nl' | 'de' | 'en';
 
@@ -13,9 +14,12 @@ export interface UserPreferences {
   language: UserLanguage;
 }
 
-interface AuthentikUser {
+export interface AuthentikUser {
   pk: number;
   username: string;
+  name: string;
+  email: string;
+  groups_obj: Array<{ name: string }>;
   attributes: Record<string, string>;
 }
 
@@ -125,5 +129,36 @@ export class UsersMeService {
 
   getPhonesFromAttributes(attributes: Record<string, string>): string[] {
     return [attributes.phone, attributes.phone2].filter((p): p is string => !!p?.startsWith('+'));
+  }
+
+  async getProfile(uid: string, groupsHeader: string): Promise<{
+    username: string;
+    email: string;
+    name: string;
+    role: 'admin' | 'user';
+    totpEnabled: boolean;
+  }> {
+    const user = await this.resolveUser(uid);
+    const role = groupsHeader.split(',').map((g) => g.trim()).includes(ADMIN_GROUP)
+      ? ('admin' as const)
+      : ('user' as const);
+    const totpEnabled = await this.checkTotp(user.pk);
+    return { username: user.username, email: user.email, name: user.name, role, totpEnabled };
+  }
+
+  private async checkTotp(pk: number): Promise<boolean> {
+    try {
+      const { data } = await axios.get(
+        `${this.authentikUrl}/api/v3/authenticators/totp/`,
+        {
+          headers: { Authorization: `Bearer ${this.authentikToken}` },
+          params: { user: pk },
+          timeout: 5_000,
+        },
+      );
+      return ((data as { count: number }).count ?? 0) > 0;
+    } catch {
+      return false;
+    }
   }
 }

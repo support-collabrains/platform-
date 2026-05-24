@@ -7,6 +7,7 @@ import axios from 'axios';
 import { DocDocument, DocNotification, DocSummary } from './document.entity';
 import { OllamaService } from './ollama.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TicketsService } from '../tickets/tickets.service';
 
 interface SummaryJob {
   documentId: string;
@@ -36,6 +37,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly ollama: OllamaService,
     private readonly notifications: NotificationsService,
+    private readonly tickets: TicketsService,
     @InjectRepository(DocDocument) private readonly docRepo: Repository<DocDocument>,
     @InjectRepository(DocNotification) private readonly notifRepo: Repository<DocNotification>,
     @InjectRepository(DocSummary) private readonly summaryRepo: Repository<DocSummary>,
@@ -151,10 +153,42 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        // ✅ — queue summary
+        // /taak, /aufgabe, /task — create ticket
+        const taskMatch = text.match(/^\/(?:taak|aufgabe|task)\s+(.+)$/i);
+        if (taskMatch) {
+          await this.handleCreateTicket(senderPhone, taskMatch[1].trim());
+          continue;
+        }
+
+        // /taken, /aufgaben, /tasks — list open tickets
+        if (/^\/(?:taken|aufgaben|tasks)$/i.test(text)) {
+          await this.handleListTickets(senderPhone);
+          continue;
+        }
+
+        // /klaar, /fertig, /done <nr> — mark ticket done
+        const doneMatch = text.match(/^\/(?:klaar|fertig|done)\s+(\d+)$/i);
+        if (doneMatch) {
+          await this.handleMarkTicketDone(senderPhone, parseInt(doneMatch[1], 10));
+          continue;
+        }
+
+        // ❌ — cancel pending ticket
+        const isCancellation = text.includes('❌') || reaction === '❌';
+        if (isCancellation) {
+          await this.handleCancelTicket(senderPhone);
+          continue;
+        }
+
+        // ✅ — confirm pending ticket first, then queue document summary
         const isApproval = text.includes('✅') || reaction === '✅';
         if (!isApproval) continue;
 
+        // Check pending ticket confirmation first
+        const ticketConfirmed = await this.handleConfirmTicket(senderPhone);
+        if (ticketConfirmed) continue;
+
+        // Fall back to document summary approval
         const notif = await this.notifRepo.findOne({
           where: { phone: senderPhone, status: 'pending' },
           order: { createdAt: 'ASC' },
@@ -185,6 +219,70 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.warn(`Signal poll error: ${(err as Error).message}`);
     }
+  }
+
+  private async handleCreateTicket(phone: string, title: string): Promise<void> {
+    const user = await this.findUserByPhone(phone);
+    if (!user) {
+      await this.sendSignal(phone, '❌ Geen account gevonden voor dit nummer.');
+      return;
+    }
+    const lang = await this.getLanguageForPhone(phone);
+    const t = this.tickets.i18n(lang);
+    await this.tickets.createPending(user.username, phone, title);
+    this.logger.log(`Ticket pending confirmation for ${user.username}: ${title}`);
+    await this.sendSignal(phone, t.created(title));
+  }
+
+  private async handleConfirmTicket(phone: string): Promise<boolean> {
+    const ticket = await this.tickets.confirmPending(phone);
+    if (!ticket) return false;
+    const lang = await this.getLanguageForPhone(phone);
+    const t = this.tickets.i18n(lang);
+    this.logger.log(`Ticket #${ticket.seq} confirmed for phone ${phone.slice(0, 8)}***: ${ticket.title}`);
+    await this.sendSignal(phone, t.confirmed(ticket.seq, ticket.title));
+    return true;
+  }
+
+  private async handleCancelTicket(phone: string): Promise<void> {
+    const lang = await this.getLanguageForPhone(phone);
+    const t = this.tickets.i18n(lang);
+    const cancelled = await this.tickets.cancelPending(phone);
+    await this.sendSignal(phone, cancelled ? t.cancelled() : t.noPending());
+  }
+
+  private async handleListTickets(phone: string): Promise<void> {
+    const user = await this.findUserByPhone(phone);
+    if (!user) {
+      await this.sendSignal(phone, '❌ Geen account gevonden voor dit nummer.');
+      return;
+    }
+    const lang = await this.getLanguageForPhone(phone);
+    const t = this.tickets.i18n(lang);
+    const open = await this.tickets.listOpen(user.username);
+    if (!open.length) {
+      await this.sendSignal(phone, t.listEmpty());
+      return;
+    }
+    const lines = [t.listHeader(), ...open.map((tk) => t.listItem(tk.seq, tk.title))];
+    await this.sendSignal(phone, lines.join('\n'));
+  }
+
+  private async handleMarkTicketDone(phone: string, seq: number): Promise<void> {
+    const user = await this.findUserByPhone(phone);
+    if (!user) {
+      await this.sendSignal(phone, '❌ Geen account gevonden voor dit nummer.');
+      return;
+    }
+    const lang = await this.getLanguageForPhone(phone);
+    const t = this.tickets.i18n(lang);
+    const ticket = await this.tickets.markDone(user.username, seq);
+    if (!ticket) {
+      await this.sendSignal(phone, t.notFound(seq));
+      return;
+    }
+    this.logger.log(`Ticket #${seq} marked done for ${user.username}`);
+    await this.sendSignal(phone, t.markedDone(ticket.seq, ticket.title));
   }
 
   private async handleSetPhone2(senderPhone: string, arg: string): Promise<void> {
@@ -368,6 +466,11 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           `📄 Document samenvatting`,
           `Zodra Paperless een nieuw document verwerkt, stuur ik je een berichtje. Stuur ✅ als antwoord (of reageer met ✅) om een AI-samenvatting te ontvangen.`,
           ``,
+          `📌 Taken`,
+          `/taak [beschrijving] — maak een nieuwe taak aan`,
+          `/taken — bekijk openstaande taken`,
+          `/klaar [nr] — markeer taak als afgerond`,
+          ``,
           `📞 2e telefoonnummer`,
           `/phone2 +316xxxxxxxx`,
           `→ Koppel een 2e nummer aan jouw account (bijv. van je partner). Dat nummer ontvangt dan ook document-meldingen.`,
@@ -381,6 +484,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           ``,
           `❓ Commando's`,
           `/help — dit bericht opnieuw tonen`,
+          `/taak, /taken, /klaar — taken beheren`,
           `/phone2 — 2e nummer beheren`,
         ].join('\n'),
       },
@@ -396,6 +500,11 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           `📄 Dokument-Zusammenfassung`,
           `Sobald Paperless ein neues Dokument verarbeitet, schreibe ich dir. Sende ✅ (oder reagiere mit ✅) um eine KI-Zusammenfassung zu erhalten.`,
           ``,
+          `📌 Aufgaben`,
+          `/aufgabe [beschreibung] — neue Aufgabe erstellen`,
+          `/aufgaben — offene Aufgaben anzeigen`,
+          `/fertig [nr] — Aufgabe als erledigt markieren`,
+          ``,
           `📞 2. Telefonnummer`,
           `/phone2 +4917xxxxxxxx`,
           `→ Verknüpfe eine 2. Nummer mit deinem Konto (z.B. für deinen Partner). Diese Nummer erhält dann ebenfalls Benachrichtigungen.`,
@@ -409,6 +518,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           ``,
           `❓ Befehle`,
           `/help — diese Nachricht erneut anzeigen`,
+          `/aufgabe, /aufgaben, /fertig — Aufgaben verwalten`,
           `/phone2 — 2. Nummer verwalten`,
         ].join('\n'),
       },
@@ -424,6 +534,11 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           `📄 Document summary`,
           `When Paperless processes a new document, I'll send you a message. Reply ✅ (or react with ✅) to receive an AI summary.`,
           ``,
+          `📌 Tasks`,
+          `/task [description] — create a new task`,
+          `/tasks — view open tasks`,
+          `/done [nr] — mark task as done`,
+          ``,
           `📞 Second phone number`,
           `/phone2 +4917xxxxxxxx`,
           `→ Link a second number to your account (e.g. for your partner). That number will also receive document notifications.`,
@@ -437,6 +552,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           ``,
           `❓ Commands`,
           `/help — show this message again`,
+          `/task, /tasks, /done — manage tasks`,
           `/phone2 — manage second number`,
         ].join('\n'),
       },

@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import DocumentsList from './components/DocumentsList';
 import NotificationLog from './components/NotificationLog';
 import PreferencesPanel from './components/PreferencesPanel';
+import TicketsList from './components/TicketsList';
 
 function SectionSkeleton() {
   return (
@@ -41,6 +42,10 @@ export default async function DashboardPage() {
 
         <Suspense fallback={<SectionSkeleton />}>
           <DocumentsList uid={uid} />
+        </Suspense>
+
+        <Suspense fallback={<SectionSkeleton />}>
+          <TicketsList uid={uid} />
         </Suspense>
 
         <Suspense fallback={<SectionSkeleton />}>

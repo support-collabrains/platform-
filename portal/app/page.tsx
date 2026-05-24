@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { CheckCircle2, Loader2, ExternalLink, AlertCircle, Users } from 'lucide-react';
+import { CheckCircle2, Loader2, ExternalLink, AlertCircle, Users, LayoutDashboard } from 'lucide-react';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
 import {
@@ -160,6 +160,16 @@ function Dashboard({ domain, mailDomain }: { domain: string; mailDomain: string 
       </div>
 
       <div className="space-y-2">
+        <Link
+          href="/dashboard"
+          className="flex items-center justify-between p-3 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition group"
+        >
+          <div className="flex items-center gap-2">
+            <LayoutDashboard size={16} className="text-emerald-600" />
+            <div className="text-sm font-medium text-emerald-800">Mijn dashboard</div>
+          </div>
+          <ExternalLink size={16} className="text-emerald-300 group-hover:text-emerald-600 transition" />
+        </Link>
         <Link
           href="/users"
           className="flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition group"

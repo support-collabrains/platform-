@@ -19,7 +19,7 @@ export default function UsersPage() {
   const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [deletingPk, setDeletingPk] = useState<number | null>(null);
-  const [form, setForm] = useState({ username: '', name: '', email: '', password: '', phone: '' });
+  const [form, setForm] = useState({ username: '', name: '', email: '', password: '', phone: '', phone2: '' });
   const [error, setError] = useState('');
 
   async function loadUsers() {
@@ -45,7 +45,7 @@ export default function UsersPage() {
         body: JSON.stringify(form),
       });
       if (!res.ok) throw new Error('Aanmaken mislukt');
-      setForm({ username: '', name: '', email: '', password: '', phone: '' });
+      setForm({ username: '', name: '', email: '', password: '', phone: '', phone2: '' });
       setShowForm(false);
       await loadUsers();
     } catch (err) {
@@ -100,9 +100,16 @@ export default function UsersPage() {
               ))}
               <input
                 type="tel"
-                placeholder="Telefoonnummer Signal (optioneel, bijv. +31612345678)"
+                placeholder="Signal nummer 1 (optioneel, bijv. +31612345678)"
                 value={form.phone}
                 onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                className="col-span-2 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                type="tel"
+                placeholder="Signal nummer 2 (optioneel)"
+                value={form.phone2}
+                onChange={(e) => setForm((f) => ({ ...f, phone2: e.target.value }))}
                 className="col-span-2 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>

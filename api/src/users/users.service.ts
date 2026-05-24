@@ -82,9 +82,10 @@ export class UsersService implements OnModuleInit {
       `✅ Nieuwe gebruiker aangemaakt: ${user.username} (${user.email})`,
     );
 
-    // Welcome message to the new user if they have a phone number
-    const phone: string | undefined = (user.attributes as Record<string, string>)?.phone;
-    if (phone?.startsWith('+')) {
+    // Welcome message to all phone numbers the new user has
+    const attrs = user.attributes as Record<string, string> ?? {};
+    const userPhones = [attrs.phone, attrs.phone2].filter((p): p is string => !!p?.startsWith('+'));
+    for (const phone of userPhones) {
       await this.notifications.sendToNumber(
         phone,
         `Welkom bij CollaBrains, ${user.name || user.username}! 👋\nJe account is klaar. Je ontvangt hierna notificaties via dit nummer.`,

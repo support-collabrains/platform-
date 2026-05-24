@@ -36,10 +36,10 @@ export class AdminController {
   @Post('users')
   async createUser(
     @Headers('authorization') auth: string,
-    @Body() body: { username: string; name: string; email: string; password: string; phone?: string },
+    @Body() body: { username: string; name: string; email: string; password: string; phone?: string; phone2?: string },
   ) {
     this.authorize(auth);
-    const pk = await this.adminService.createUser(body.username, body.name, body.email, body.password, body.phone);
+    const pk = await this.adminService.createUser(body.username, body.name, body.email, body.password, body.phone, body.phone2);
     await this.usersService.onboardUser(pk);
     return { ok: true, pk };
   }

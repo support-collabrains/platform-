@@ -57,12 +57,12 @@ export class NotificationsService {
 
   async getAuthUserPhones(): Promise<string[]> {
     try {
-      const res = await axios.get<{ results: { attributes?: { phone?: string } }[] }>(
+      const res = await axios.get<{ results: { attributes?: { phone?: string; phone2?: string } }[] }>(
         `${this.authentikUrl}/api/v3/core/users/?page_size=100&type=internal`,
         { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 5_000 },
       );
       return res.data.results
-        .map((u) => u.attributes?.phone ?? '')
+        .flatMap((u) => [u.attributes?.phone ?? '', u.attributes?.phone2 ?? ''])
         .filter((p) => p.startsWith('+'));
     } catch {
       return [];

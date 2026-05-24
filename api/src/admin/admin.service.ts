@@ -23,8 +23,11 @@ export class AdminService {
       .map((u) => ({ pk: u.pk, username: u.username, name: u.name, email: u.email, isActive: u.is_active }));
   }
 
-  async createUser(username: string, name: string, email: string, password: string, phone?: string): Promise<number> {
+  async createUser(username: string, name: string, email: string, password: string, phone?: string, phone2?: string): Promise<number> {
     const api = this.api;
+    const attributes: Record<string, string> = {};
+    if (phone) attributes.phone = phone;
+    if (phone2) attributes.phone2 = phone2;
     const { data: user } = await api.post('/api/v3/core/users/', {
       username,
       name,
@@ -32,7 +35,7 @@ export class AdminService {
       is_active: true,
       type: 'internal',
       groups: [],
-      attributes: phone ? { phone } : {},
+      attributes,
     });
     await api.post(`/api/v3/core/users/${user.pk}/set_password/`, { password });
     this.logger.log(`Created Authentik user: ${username} (pk=${user.pk})`);

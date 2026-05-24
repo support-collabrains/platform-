@@ -8,6 +8,7 @@ export class SendMailDto {
   @IsString()
   subject!: string;
 
+  @IsNotEmpty()
   @IsString()
   bodyHtml!: string;
 }

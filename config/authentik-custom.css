@@ -3,17 +3,20 @@
 /* Hide "Powered by authentik" footer */
 .pf-c-login__footer li span { display: none; }
 
-/* Change submit button label to Sign-In */
-.pf-c-login__main-body button[type="submit"],
-ak-stage-identification button[type="submit"],
-ak-flow-executor button[type="submit"] {
-  font-size: 0 !important;
-  color: transparent !important;
+/* Ensure login card doesn't clip the submit button */
+.pf-c-login__main {
+  overflow: visible !important;
+  height: auto !important;
+  min-height: unset !important;
 }
-.pf-c-login__main-body button[type="submit"]::after,
-ak-stage-identification button[type="submit"]::after,
-ak-flow-executor button[type="submit"]::after {
-  content: 'Sign-In';
-  font-size: 1rem;
-  color: white;
+.pf-c-login__main-body {
+  overflow: visible !important;
+  height: auto !important;
+  padding-bottom: 2rem !important;
+}
+ak-flow-executor,
+ak-stage-identification {
+  display: block !important;
+  overflow: visible !important;
+  height: auto !important;
 }

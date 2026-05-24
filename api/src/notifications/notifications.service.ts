@@ -47,10 +47,12 @@ export class NotificationsService {
     await Promise.all(phones.map((p) => this.sendToNumber(p, message)));
   }
 
-  // Notify the admin recipient AND all users with phones
+  // Notify the admin recipient AND all users with phones (deduped)
   async broadcast(message: string): Promise<void> {
     await this.send(message);
-    await this.sendToUsers(message);
+    const phones = await this.getAuthUserPhones();
+    const others = phones.filter((p) => p !== this.recipient);
+    await Promise.all(others.map((p) => this.sendToNumber(p, message)));
   }
 
   async getAuthUserPhones(): Promise<string[]> {

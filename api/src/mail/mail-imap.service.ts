@@ -1,6 +1,7 @@
 // api/src/mail/mail-imap.service.ts
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import { ImapFlow } from 'imapflow';
 import { simpleParser, AddressObject } from 'mailparser';
 import createDOMPurify from 'dompurify';
@@ -41,7 +42,7 @@ export class MailImapService {
 
     if (!password) {
       this.logger.log(`No IMAP password stored for ${email} — resetting via Mailcow`);
-      password = `${Math.random().toString(36).slice(2)}Aa1!`;
+      password = crypto.randomBytes(16).toString('base64url') + 'Aa1!';
       await this.resetMailcowPassword(email, password);
       await this.storePasswordInAuthentik(uid, authUser.attributes ?? {}, password);
     }
@@ -131,6 +132,7 @@ export class MailImapService {
 
       // Fetch most-recent messages: sequence range (descending)
       const rangeEnd = total - (page - 1) * limit;
+      if (rangeEnd < 1) return { messages: [], total };
       const rangeStart = Math.max(1, rangeEnd - limit + 1);
 
       const messages: MailMessage[] = [];
@@ -171,8 +173,8 @@ export class MailImapService {
       if (!msg || !msg.source) throw new NotFoundException('Message not found');
 
       const parsed = await simpleParser(msg.source);
-      const toAddr = parsed.to as AddressObject | undefined;
-      const ccAddr = parsed.cc as AddressObject | undefined;
+      const toAddr = Array.isArray(parsed.to) ? parsed.to[0] : parsed.to;
+      const ccAddr = Array.isArray(parsed.cc) ? parsed.cc[0] : parsed.cc;
 
       return {
         uid: msgUid,
@@ -243,7 +245,8 @@ export class MailImapService {
         subject: data.vacation_subject ?? '',
         body: data.vacation_body ?? '',
       };
-    } catch {
+    } catch (err) {
+      this.logger.warn(`getVacation Mailcow request failed: ${(err as Error).message}`);
       return { active: false, subject: '', body: '' };
     }
   }

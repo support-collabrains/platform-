@@ -8,5 +8,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [NotificationsModule],
   controllers: [UsersController],
   providers: [UsersService, PaperlessService],
+  exports: [UsersService],
 })
 export class UsersModule {}

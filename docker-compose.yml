@@ -22,6 +22,7 @@ volumes:
   paperless_data:
   paperless_media:
   signal_data:
+  backup_data:
 
 services:
 
@@ -120,14 +121,26 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_URL: https://portal.${PRIMARY_DOMAIN}/api
+      INTERNAL_API_URL: http://api:3001
+      AUTHENTIK_WEBHOOK_SECRET: ${AUTHENTIK_WEBHOOK_SECRET}
     depends_on: [api]
     networks: [platform]
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portal.rule=Host(`portal.${PRIMARY_DOMAIN}`)"
+      # Protected portal (requires Authentik login)
+      - "traefik.http.routers.portal.rule=Host(`portal.${PRIMARY_DOMAIN}`) && !Path(`/logo.svg`)"
       - "traefik.http.routers.portal.entrypoints=websecure"
       - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portal.middlewares=authentik-forward@docker"
       - "traefik.http.services.portal.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.authentik-forward.forwardauth.address=http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+      - "traefik.http.middlewares.authentik-forward.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.authentik-forward.forwardauth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid"
+      # Public assets (no auth required — needed for Authentik login page logo)
+      - "traefik.http.routers.portal-public.rule=Host(`portal.${PRIMARY_DOMAIN}`) && Path(`/logo.svg`)"
+      - "traefik.http.routers.portal-public.entrypoints=websecure"
+      - "traefik.http.routers.portal-public.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portal-public.service=portal"
 
   # ── Authentik ────────────────────────────────────────────────────────────
   postgresql-authentik:
@@ -197,6 +210,24 @@ services:
       - authentik_media:/media
       - authentik_certs:/certs
     depends_on: [authentik-server]
+    networks: [platform]
+
+  # ── Backup ──────────────────────────────────────────────────────────────
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${DB_PASSWORD}
+      AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      BACKUP_DIR: /backups
+    volumes:
+      - ./scripts/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+      - paperless_media:/paperless_media:ro
+    entrypoint: ["/bin/sh", "-c", "echo '0 3 * * * /bin/sh /backup.sh >> /backups/backup.log 2>&1' | crontab - && crond -f -d 8"]
+    depends_on:
+      db:
+        condition: service_healthy
     networks: [platform]
 
   # ── Signal CLI REST API ──────────────────────────────────────────────────

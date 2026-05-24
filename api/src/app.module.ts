@@ -4,6 +4,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
 import { UsersModule } from './users/users.module';
+import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
 
@@ -23,6 +24,7 @@ import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
     }),
     BootstrapModule,
     UsersModule,
+    AdminModule,
     NotificationsModule,
   ],
 })

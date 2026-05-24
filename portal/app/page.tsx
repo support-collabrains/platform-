@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { CheckCircle2, Server, Loader2, ExternalLink, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, ExternalLink, AlertCircle, Users } from 'lucide-react';
+import Link from 'next/link';
+import Logo from '@/components/Logo';
 import {
   getBootstrapState,
   createBootstrapEventSource,
@@ -78,9 +80,8 @@ export default function Home() {
     <main className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center p-4">
       <div className="w-full max-w-xl">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-2">
-            <Server size={28} className="text-blue-600" />
-            <span className="text-2xl font-bold text-slate-800">Platform</span>
+          <div className="flex justify-center mb-3">
+            <Logo width={140} height={70} />
           </div>
           <p className="text-slate-500 text-sm">Self-hosted control plane</p>
         </div>
@@ -159,6 +160,16 @@ function Dashboard({ domain, mailDomain }: { domain: string; mailDomain: string 
       </div>
 
       <div className="space-y-2">
+        <Link
+          href="/users"
+          className="flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition group"
+        >
+          <div className="flex items-center gap-2">
+            <Users size={16} className="text-blue-600" />
+            <div className="text-sm font-medium text-blue-800">Gebruikersbeheer</div>
+          </div>
+          <ExternalLink size={16} className="text-blue-300 group-hover:text-blue-600 transition" />
+        </Link>
         {domain && (
           <ServiceLink
             href={`https://auth.${domain}`}

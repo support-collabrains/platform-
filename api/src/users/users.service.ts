@@ -77,9 +77,20 @@ export class UsersService implements OnModuleInit {
       await this.createMailcowMailbox(user.email, user.name);
     }
 
-    await this.notifications.send(
+    // Notify admin + all users with phone numbers
+    await this.notifications.broadcast(
       `✅ Nieuwe gebruiker aangemaakt: ${user.username} (${user.email})`,
     );
+
+    // Welcome message to the new user if they have a phone number
+    const phone: string | undefined = (user.attributes as Record<string, string>)?.phone;
+    if (phone?.startsWith('+')) {
+      await this.notifications.sendToNumber(
+        phone,
+        `Welkom bij CollaBrains, ${user.name || user.username}! 👋\nJe account is klaar. Je ontvangt hierna notificaties via dit nummer.`,
+      );
+    }
+
     this.logger.log(`Onboarding complete: ${user.username}`);
   }
 

@@ -35,6 +35,9 @@ export class AuthentikService {
     // Create application linked to the OIDC provider
     await this.createPortalApplication(api, providerId, config.primaryDomain, config.oauthClientId);
 
+    // Set CollaBrains branding (logo hosted publicly on portal)
+    await this.configureBranding(api, config.primaryDomain);
+
     this.logger.log('Authentik provisioning complete');
   }
 
@@ -111,6 +114,21 @@ export class AuthentikService {
 
     this.logger.log(`Created OIDC provider (pk=${provider.pk})`);
     return provider.pk;
+  }
+
+  private async configureBranding(api: ReturnType<typeof axios.create>, primaryDomain: string) {
+    try {
+      const { data } = await api.get('/api/v3/core/brands/');
+      const brand = data.results?.[0];
+      if (!brand) return;
+      await api.patch(`/api/v3/core/brands/${brand.brand_uuid}/`, {
+        branding_title: 'CollaBrains',
+        branding_logo: `https://portal.${primaryDomain}/logo.svg`,
+      });
+      this.logger.log('Configured Authentik branding: CollaBrains');
+    } catch (err) {
+      this.logger.warn(`Branding config failed (non-fatal): ${(err as Error).message}`);
+    }
   }
 
   private async createPortalApplication(

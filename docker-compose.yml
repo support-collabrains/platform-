@@ -82,8 +82,13 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       TIMEZONE: ${TIMEZONE:-UTC}
+      PAPERLESS_INTERNAL_URL: http://paperless:8000
+      PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
+      PAPERLESS_DATA_DIR: /data/paperless
+      AUTHENTIK_WEBHOOK_SECRET: ${AUTHENTIK_WEBHOOK_SECRET}
     volumes:
       - ./config/traefik:/etc/traefik-dynamic
+      - ./data/paperless:/data/paperless
     depends_on:
       db:
         condition: service_healthy

@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BootstrapModule } from './bootstrap/bootstrap.module';
+import { UsersModule } from './users/users.module';
 import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
 
 @Module({
@@ -20,6 +21,7 @@ import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
       }),
     }),
     BootstrapModule,
+    UsersModule,
   ],
 })
 export class AppModule {}

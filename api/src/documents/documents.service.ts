@@ -83,7 +83,11 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     const doc = await this.docRepo.save(this.docRepo.create({ paperlessId, owner, title }));
     this.logger.log(`New document consumed: ${title} (paperless #${paperlessId}, owner: ${owner})`);
 
-    const phones = await this.getPhonesForUser(owner);
+    const { phones, signalDocNotify } = await this.getPhonesAndPrefsForUser(owner);
+    if (!signalDocNotify) {
+      this.logger.log(`Signal notifications disabled for ${owner} — skipping`);
+      return;
+    }
     if (!phones.length) {
       this.logger.log(`No phone numbers for ${owner} — skipping Signal prompt`);
       return;
@@ -274,20 +278,25 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     return (data.content as string) ?? '';
   }
 
-  private async getPhonesForUser(username: string): Promise<string[]> {
+  private async getPhonesAndPrefsForUser(
+    username: string,
+  ): Promise<{ phones: string[]; signalDocNotify: boolean }> {
     try {
       const { data } = await axios.get(`${this.authentikUrl}/api/v3/core/users/`, {
         headers: { Authorization: `Bearer ${this.authentikToken}` },
         params: { username, type: 'internal', page_size: 10 },
         timeout: 8_000,
       });
-      const user = (data.results as Array<{ username: string; attributes?: { phone?: string; phone2?: string } }>)
-        .find((u) => u.username === username);
-      if (!user) return [];
-      return [user.attributes?.phone, user.attributes?.phone2]
-        .filter((p): p is string => !!p?.startsWith('+'));
+      const user = (
+        data.results as Array<{ username: string; attributes?: Record<string, string> }>
+      ).find((u) => u.username === username);
+      if (!user) return { phones: [], signalDocNotify: true };
+      const attrs = user.attributes ?? {};
+      const phones = [attrs.phone, attrs.phone2].filter((p): p is string => !!p?.startsWith('+'));
+      const signalDocNotify = attrs.signal_doc_notify !== 'false';
+      return { phones, signalDocNotify };
     } catch {
-      return [];
+      return { phones: [], signalDocNotify: true };
     }
   }
 

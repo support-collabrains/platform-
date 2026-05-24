@@ -9,6 +9,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
 import { DocDocument, DocNotification, DocSummary } from './documents/document.entity';
 import { DocumentsModule } from './documents/documents.module';
+import { UsersMeModule } from './users-me/users-me.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { DocumentsModule } from './documents/documents.module';
     AdminModule,
     NotificationsModule,
     DocumentsModule,
+    UsersMeModule,
   ],
 })
 export class AppModule {}

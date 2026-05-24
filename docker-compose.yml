@@ -215,8 +215,13 @@ services:
 
   # ── Backup ──────────────────────────────────────────────────────────────
   backup:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: config/backup.Dockerfile
     restart: unless-stopped
+    env_file:
+      - .env
+      - ./core/mailcow/mailcow.conf
     environment:
       PGPASSWORD: ${DB_PASSWORD}
       AUTHENTIK_DB_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
@@ -225,11 +230,16 @@ services:
       - ./scripts/backup.sh:/backup.sh:ro
       - ./backups:/backups
       - paperless_media:/paperless_media:ro
+      - vmail-vol-1:/vmail:ro
+      - traefik_certs:/traefik_certs:ro
+      - signal_data:/signal_data:ro
     entrypoint: ["/bin/sh", "-c", "echo '0 3 * * * /bin/sh /backup.sh >> /backups/backup.log 2>&1' | crontab - && crond -f -d 8"]
     depends_on:
       db:
         condition: service_healthy
-    networks: [platform]
+    networks:
+      - platform
+      - mailcow-network
 
   # ── Signal CLI REST API ──────────────────────────────────────────────────
   signal-api:

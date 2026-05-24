@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Daily backup: platform DB, authentik DB, paperless media.
+# Daily backup: platform DB, authentik DB, mailcow DB, vmail, paperless media,
+# signal data, traefik certs.
 # Runs inside the backup container; env vars injected via docker-compose.
 set -euo pipefail
 
@@ -19,9 +20,28 @@ PGPASSWORD="${AUTHENTIK_DB_PASSWORD}" pg_dump -h postgresql-authentik -U authent
   > "${DIR}/authentik.sql"
 echo "[backup] authentik DB → ${DIR}/authentik.sql ($(du -sh "${DIR}/authentik.sql" | cut -f1))"
 
+# Mailcow MariaDB (connect via service hostname on mailcow-network)
+MYSQL_PWD="${DBROOT}" mariadb-dump \
+  -h mysql-mailcow -u root \
+  --skip-ssl --single-transaction --quick \
+  "${DBNAME:-mailcow}" > "${DIR}/mailcow.sql"
+echo "[backup] mailcow DB → ${DIR}/mailcow.sql ($(du -sh "${DIR}/mailcow.sql" | cut -f1))"
+
+# Mailcow vmail (email messages)
+tar -czf "${DIR}/vmail.tar.gz" -C /vmail . 2>/dev/null || true
+echo "[backup] vmail → ${DIR}/vmail.tar.gz ($(du -sh "${DIR}/vmail.tar.gz" | cut -f1))"
+
 # Paperless media (documents + thumbnails)
 tar -czf "${DIR}/paperless-media.tar.gz" -C /paperless_media . 2>/dev/null || true
 echo "[backup] paperless media → ${DIR}/paperless-media.tar.gz ($(du -sh "${DIR}/paperless-media.tar.gz" | cut -f1))"
+
+# Signal CLI data (registered account + keys)
+tar -czf "${DIR}/signal-data.tar.gz" -C /signal_data . 2>/dev/null || true
+echo "[backup] signal data → ${DIR}/signal-data.tar.gz ($(du -sh "${DIR}/signal-data.tar.gz" | cut -f1))"
+
+# Traefik TLS certificates (Let's Encrypt)
+tar -czf "${DIR}/traefik-certs.tar.gz" -C /traefik_certs . 2>/dev/null || true
+echo "[backup] traefik certs → ${DIR}/traefik-certs.tar.gz ($(du -sh "${DIR}/traefik-certs.tar.gz" | cut -f1))"
 
 # Rotate: delete backups older than 7 days
 find "${BACKUP_ROOT}" -maxdepth 1 -type d -name "????-??-??" | sort | head -n -7 | xargs -r rm -rf

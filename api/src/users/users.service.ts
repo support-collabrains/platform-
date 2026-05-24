@@ -74,7 +74,7 @@ export class UsersService implements OnModuleInit {
 
     const mailDomain = this.config.get('MAIL_DOMAIN') ?? '';
     if (mailDomain && user.email.endsWith(`@${mailDomain}`)) {
-      await this.createMailcowMailbox(user.email, user.name);
+      await this.createMailcowMailbox(user.email, user.name, authentikPk);
     }
 
     // Notify admin + all users with phone numbers
@@ -125,7 +125,7 @@ export class UsersService implements OnModuleInit {
     }
   }
 
-  private async createMailcowMailbox(email: string, name: string): Promise<void> {
+  private async createMailcowMailbox(email: string, name: string, authentikPk: number): Promise<void> {
     const url = this.config.get('MAILCOW_URL') ?? 'http://nginx-mailcow:8080';
     const apiKey = this.config.get('MAILCOW_API_KEY') ?? '';
     if (!apiKey) return;
@@ -139,7 +139,6 @@ export class UsersService implements OnModuleInit {
         this.logger.log(`Mailbox already exists: ${email}`);
         return;
       }
-      // Temporary password — users authenticate via SSO
       const tmp = `${Math.random().toString(36).slice(2)}Aa1!`;
       await api.post('/api/v1/add/mailbox', {
         local_part: local,
@@ -152,8 +151,27 @@ export class UsersService implements OnModuleInit {
         force_pw_update: 0,
       });
       this.logger.log(`Created mailbox: ${email}`);
+      await this.storeMailPassword(authentikPk, tmp);
     } catch (err) {
       this.logger.error(`Failed to create mailbox ${email}: ${(err as Error).message}`);
+    }
+  }
+
+  private async storeMailPassword(authentikPk: number, password: string): Promise<void> {
+    const url = this.config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
+    const token = this.config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '';
+    try {
+      const { data: user } = await axios.get(`${url}/api/v3/core/users/${authentikPk}/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 8_000,
+      });
+      await axios.patch(
+        `${url}/api/v3/core/users/${authentikPk}/`,
+        { attributes: { ...(user.attributes ?? {}), mail_imap_password: password } },
+        { headers: { Authorization: `Bearer ${token}` }, timeout: 8_000 },
+      );
+    } catch (err) {
+      this.logger.error(`Failed to store mail password for pk=${authentikPk}: ${(err as Error).message}`);
     }
   }
 }

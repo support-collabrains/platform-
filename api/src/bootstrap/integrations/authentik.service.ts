@@ -129,6 +129,15 @@ export class AuthentikService {
     } catch (err) {
       this.logger.warn(`Branding config failed (non-fatal): ${(err as Error).message}`);
     }
+
+    try {
+      await api.patch('/api/v3/flows/instances/default-authentication-flow/', {
+        title: 'Welcome to CollaBrains!',
+      });
+      this.logger.log('Set authentication flow title to CollaBrains');
+    } catch (err) {
+      this.logger.warn(`Flow title update failed (non-fatal): ${(err as Error).message}`);
+    }
   }
 
   private async createPortalApplication(

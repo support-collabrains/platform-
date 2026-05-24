@@ -1,0 +1,4 @@
+/* CollaBrains branding overrides */
+
+/* Hide "Powered by authentik" footer */
+.pf-c-login__footer li span { display: none; }

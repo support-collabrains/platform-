@@ -184,6 +184,7 @@ services:
     volumes:
       - authentik_media:/media
       - authentik_certs:/certs
+      - ./config/authentik-custom.css:/web/dist/custom.css:ro
     depends_on:
       postgresql-authentik:
         condition: service_healthy
@@ -278,7 +279,7 @@ services:
       # Authentik OIDC SSO
       PAPERLESS_APPS: allauth.socialaccount.providers.openid_connect
       PAPERLESS_SOCIALACCOUNT_PROVIDERS: >
-        {"openid_connect": {"APPS": [{"provider_id": "paperless-authentik", "name": "Authentik",
+        {"openid_connect": {"APPS": [{"provider_id": "paperless-authentik", "name": "CollaBrains",
         "client_id": "${PAPERLESS_OIDC_CLIENT_ID}", "secret": "${PAPERLESS_OIDC_CLIENT_SECRET}",
         "settings": {"server_url": "https://auth.${PRIMARY_DOMAIN}/application/o/paperless-ngx/.well-known/openid-configuration",
         "token_auth_method": "client_secret_basic", "access_token_url": "https://auth.${PRIMARY_DOMAIN}/application/o/token/",

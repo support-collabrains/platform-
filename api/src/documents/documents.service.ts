@@ -14,6 +14,7 @@ interface SummaryJob {
   phone: string;
   paperlessId: number;
   title: string;
+  language: 'nl' | 'de' | 'en';
 }
 
 @Injectable()
@@ -88,7 +89,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     // Trigger paperless-gpt AI classification in background
     this.tagDocumentForGpt(paperlessId).catch(() => {});
 
-    const { phones, signalDocNotify } = await this.getPhonesAndPrefsForUser(owner);
+    const { phones, signalDocNotify, language } = await this.getPhonesAndPrefsForUser(owner);
     if (!signalDocNotify) {
       this.logger.log(`Signal notifications disabled for ${owner} — skipping`);
       return;
@@ -98,9 +99,9 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    const t = this.i18n(language);
     for (const phone of phones) {
-      const msg = `📄 Nieuw document ontvangen\n${title}\n\nStuur ✅ (of reageer met ✅) om een automatische AI-samenvatting te ontvangen.`;
-      const sentTimestamp = await this.sendSignal(phone, msg);
+      const sentTimestamp = await this.sendSignal(phone, t.newDoc(title));
 
       await this.notifRepo.save(
         this.notifRepo.create({
@@ -136,7 +137,10 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
 
         // /help
         if (/^\/help$/i.test(text)) {
-          await this.sendSignal(senderPhone, this.helpText());
+          const lang = await this.getLanguageForPhone(senderPhone);
+          await this.sendSignal(senderPhone, this.i18n(lang).help(
+            this.portalOrigin ? `${this.portalOrigin}/dashboard` : 'het dashboard',
+          ));
           continue;
         }
 
@@ -163,8 +167,11 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         notif.status = 'processing';
         await this.notifRepo.save(notif);
 
+        const userLang = await this.getLanguageForPhone(senderPhone);
+        const tApproval = this.i18n(userLang);
+
         this.logger.log(`✅ received from ${senderPhone} for document: ${doc.title}`);
-        await this.sendSignal(senderPhone, `⏳ Bezig met samenvatten...\n${doc.title}`);
+        await this.sendSignal(senderPhone, tApproval.processing(doc.title));
 
         await this.queue.add('summarize', {
           documentId: doc.id,
@@ -172,6 +179,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           phone: senderPhone,
           paperlessId: doc.paperlessId,
           title: doc.title,
+          language: userLang,
         } satisfies SummaryJob);
       }
     } catch (err) {
@@ -240,41 +248,28 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private helpText(): string {
-    const dashboard = this.portalOrigin ? `${this.portalOrigin}/dashboard` : 'het dashboard';
-    return [
-      `📋 CollaBrains — Overzicht`,
-      ``,
-      `📄 Document samenvatting`,
-      `Zodra Paperless een nieuw document verwerkt, stuur ik je een berichtje. Stuur ✅ als antwoord (of reageer met ✅) om een AI-samenvatting te ontvangen.`,
-      ``,
-      `📞 2e telefoonnummer`,
-      `/phone2 +316xxxxxxxx`,
-      `→ Koppel een 2e nummer aan jouw account (bijv. van je partner). Dat nummer ontvangt dan ook document-meldingen.`,
-      ``,
-      `/phone2 verwijder`,
-      `→ Verwijder je gekoppelde 2e nummer.`,
-      ``,
-      `⚙️ Instellingen`,
-      `Meldingen aan- of uitzetten doe je via het dashboard:`,
-      dashboard,
-      ``,
-      `❓ Commando's`,
-      `/help — dit bericht opnieuw tonen`,
-      `/phone2 — 2e nummer beheren`,
-    ].join('\n');
+  private async getLanguageForPhone(phone: string): Promise<'nl' | 'de' | 'en'> {
+    try {
+      const user = await this.findUserByPhone(phone);
+      if (!user) return 'nl';
+      const lang = user.attributes.language as 'nl' | 'de' | 'en';
+      return ['nl', 'de', 'en'].includes(lang) ? lang : 'nl';
+    } catch {
+      return 'nl';
+    }
   }
 
   // BullMQ worker: fetch text from Paperless → Ollama → send via Signal
   private async processSummary(data: SummaryJob): Promise<void> {
-    const { documentId, notificationId, phone, paperlessId, title } = data;
+    const { documentId, notificationId, phone, paperlessId, title, language } = data;
+    const t = this.i18n(language ?? 'nl');
     try {
       const text = await this.fetchDocumentText(paperlessId);
-      if (!text) throw new Error('Document heeft geen extracteerbare tekst');
+      if (!text) throw new Error('Geen extracteerbare tekst / No extractable text / Kein extrahierbarer Text');
 
       const summary = await this.ollama.summarize(text);
 
-      await this.sendSignal(phone, `📋 Samenvatting\n${title}\n\n${summary}`);
+      await this.sendSignal(phone, t.summary(title, summary));
 
       await this.summaryRepo.save(
         this.summaryRepo.create({ documentId, content: summary, modelUsed: this.ollama.model }),
@@ -285,7 +280,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       const msg = (err as Error).message;
       this.logger.error(`Summary processing failed: ${msg}`);
-      await this.sendSignal(phone, `❌ Samenvatting mislukt voor:\n${title}\n\n${msg}`);
+      await this.sendSignal(phone, t.failed(title, msg));
       await this.notifRepo.update(notificationId, { status: 'failed' });
     }
   }
@@ -331,7 +326,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
 
   private async getPhonesAndPrefsForUser(
     username: string,
-  ): Promise<{ phones: string[]; signalDocNotify: boolean }> {
+  ): Promise<{ phones: string[]; signalDocNotify: boolean; language: 'nl' | 'de' | 'en' }> {
     try {
       const { data } = await axios.get(`${this.authentikUrl}/api/v3/core/users/`, {
         headers: { Authorization: `Bearer ${this.authentikToken}` },
@@ -341,14 +336,112 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
       const user = (
         data.results as Array<{ username: string; attributes?: Record<string, string> }>
       ).find((u) => u.username === username);
-      if (!user) return { phones: [], signalDocNotify: true };
+      if (!user) return { phones: [], signalDocNotify: true, language: 'nl' };
       const attrs = user.attributes ?? {};
       const phones = [attrs.phone, attrs.phone2].filter((p): p is string => !!p?.startsWith('+'));
       const signalDocNotify = attrs.signal_doc_notify !== 'false';
-      return { phones, signalDocNotify };
+      const lang = attrs.language as 'nl' | 'de' | 'en';
+      const language = ['nl', 'de', 'en'].includes(lang) ? lang : 'nl';
+      return { phones, signalDocNotify, language };
     } catch {
-      return { phones: [], signalDocNotify: true };
+      return { phones: [], signalDocNotify: true, language: 'nl' };
     }
+  }
+
+  private i18n(lang: 'nl' | 'de' | 'en'): {
+    newDoc: (title: string) => string;
+    processing: (title: string) => string;
+    summary: (title: string, text: string) => string;
+    failed: (title: string, reason: string) => string;
+    help: (dashboard: string) => string;
+  } {
+    const t = {
+      nl: {
+        newDoc: (t: string) =>
+          `📄 Nieuw document ontvangen\n${t}\n\nStuur ✅ (of reageer met ✅) om een automatische AI-samenvatting te ontvangen.`,
+        processing: (t: string) => `⏳ Bezig met samenvatten...\n${t}`,
+        summary: (t: string, s: string) => `📋 Samenvatting\n${t}\n\n${s}`,
+        failed: (t: string, r: string) => `❌ Samenvatting mislukt voor:\n${t}\n\n${r}`,
+        help: (d: string) => [
+          `📋 CollaBrains — Overzicht`,
+          ``,
+          `📄 Document samenvatting`,
+          `Zodra Paperless een nieuw document verwerkt, stuur ik je een berichtje. Stuur ✅ als antwoord (of reageer met ✅) om een AI-samenvatting te ontvangen.`,
+          ``,
+          `📞 2e telefoonnummer`,
+          `/phone2 +316xxxxxxxx`,
+          `→ Koppel een 2e nummer aan jouw account (bijv. van je partner). Dat nummer ontvangt dan ook document-meldingen.`,
+          ``,
+          `/phone2 verwijder`,
+          `→ Verwijder je gekoppelde 2e nummer.`,
+          ``,
+          `⚙️ Instellingen`,
+          `Taal en meldingen instellen via het dashboard:`,
+          d,
+          ``,
+          `❓ Commando's`,
+          `/help — dit bericht opnieuw tonen`,
+          `/phone2 — 2e nummer beheren`,
+        ].join('\n'),
+      },
+      de: {
+        newDoc: (t: string) =>
+          `📄 Neues Dokument eingegangen\n${t}\n\nSende ✅ (oder reagiere mit ✅) um eine automatische KI-Zusammenfassung zu erhalten.`,
+        processing: (t: string) => `⏳ Erstelle Zusammenfassung...\n${t}`,
+        summary: (t: string, s: string) => `📋 Zusammenfassung\n${t}\n\n${s}`,
+        failed: (t: string, r: string) => `❌ Zusammenfassung fehlgeschlagen:\n${t}\n\n${r}`,
+        help: (d: string) => [
+          `📋 CollaBrains — Übersicht`,
+          ``,
+          `📄 Dokument-Zusammenfassung`,
+          `Sobald Paperless ein neues Dokument verarbeitet, schreibe ich dir. Sende ✅ (oder reagiere mit ✅) um eine KI-Zusammenfassung zu erhalten.`,
+          ``,
+          `📞 2. Telefonnummer`,
+          `/phone2 +4917xxxxxxxx`,
+          `→ Verknüpfe eine 2. Nummer mit deinem Konto (z.B. für deinen Partner). Diese Nummer erhält dann ebenfalls Benachrichtigungen.`,
+          ``,
+          `/phone2 entfernen`,
+          `→ Entferne deine verknüpfte 2. Nummer.`,
+          ``,
+          `⚙️ Einstellungen`,
+          `Sprache und Benachrichtigungen im Dashboard:`,
+          d,
+          ``,
+          `❓ Befehle`,
+          `/help — diese Nachricht erneut anzeigen`,
+          `/phone2 — 2. Nummer verwalten`,
+        ].join('\n'),
+      },
+      en: {
+        newDoc: (t: string) =>
+          `📄 New document received\n${t}\n\nSend ✅ (or react with ✅) to receive an automatic AI summary.`,
+        processing: (t: string) => `⏳ Creating summary...\n${t}`,
+        summary: (t: string, s: string) => `📋 Summary\n${t}\n\n${s}`,
+        failed: (t: string, r: string) => `❌ Summary failed for:\n${t}\n\n${r}`,
+        help: (d: string) => [
+          `📋 CollaBrains — Help`,
+          ``,
+          `📄 Document summary`,
+          `When Paperless processes a new document, I'll send you a message. Reply ✅ (or react with ✅) to receive an AI summary.`,
+          ``,
+          `📞 Second phone number`,
+          `/phone2 +4917xxxxxxxx`,
+          `→ Link a second number to your account (e.g. for your partner). That number will also receive document notifications.`,
+          ``,
+          `/phone2 remove`,
+          `→ Remove your linked second number.`,
+          ``,
+          `⚙️ Settings`,
+          `Set language and notification preferences in the dashboard:`,
+          d,
+          ``,
+          `❓ Commands`,
+          `/help — show this message again`,
+          `/phone2 — manage second number`,
+        ].join('\n'),
+      },
+    };
+    return t[lang];
   }
 
   private async sendSignal(phone: string, message: string): Promise<number | null> {

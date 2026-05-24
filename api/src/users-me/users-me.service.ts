@@ -5,9 +5,12 @@ import { In, Repository } from 'typeorm';
 import axios from 'axios';
 import { DocDocument, DocNotification } from '../documents/document.entity';
 
+export type UserLanguage = 'nl' | 'de' | 'en';
+
 export interface UserPreferences {
   signal_doc_notify: boolean;
   signal_digest_mode: boolean;
+  language: UserLanguage;
 }
 
 interface AuthentikUser {
@@ -94,9 +97,11 @@ export class UsersMeService {
   }
 
   parsePreferences(attributes: Record<string, string>): UserPreferences {
+    const lang = attributes.language as UserLanguage;
     return {
       signal_doc_notify: attributes.signal_doc_notify !== 'false',
       signal_digest_mode: attributes.signal_digest_mode === 'true',
+      language: ['nl', 'de', 'en'].includes(lang) ? lang : 'nl',
     };
   }
 
@@ -108,6 +113,8 @@ export class UsersMeService {
       attrs.signal_doc_notify = String(prefs.signal_doc_notify);
     if (prefs.signal_digest_mode !== undefined)
       attrs.signal_digest_mode = String(prefs.signal_digest_mode);
+    if (prefs.language !== undefined && ['nl', 'de', 'en'].includes(prefs.language))
+      attrs.language = prefs.language;
 
     await axios.patch(
       `${this.authentikUrl}/api/v3/core/users/${uid}/`,

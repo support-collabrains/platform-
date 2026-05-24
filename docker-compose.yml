@@ -350,7 +350,7 @@ services:
       LLM_PROVIDER: ollama
       OLLAMA_HOST: http://ollama:11434
       LLM_MODEL: ${OLLAMA_MODEL:-mistral}
-      LLM_LANGUAGE: Dutch
+      LLM_LANGUAGE: "Dutch, German or English — use the same language as the document"
       MANUAL_TAG: paperless-gpt
       AUTO_PROCESS_DOCUMENTS: "true"
     depends_on:

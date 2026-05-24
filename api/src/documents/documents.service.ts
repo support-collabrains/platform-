@@ -29,6 +29,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
   private readonly paperlessToken: string;
   private readonly authentikUrl: string;
   private readonly authentikToken: string;
+  private readonly portalOrigin: string;
 
   constructor(
     private readonly config: ConfigService,
@@ -44,6 +45,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     this.paperlessToken = config.get('PAPERLESS_API_TOKEN') ?? '';
     this.authentikUrl = config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
     this.authentikToken = config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '';
+    this.portalOrigin = config.get('PORTAL_ORIGIN') ?? '';
   }
 
   async onModuleInit() {
@@ -94,7 +96,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     }
 
     for (const phone of phones) {
-      const msg = `📄 Nieuw document: *${title}*\nWil je een automatische samenvatting? Stuur ✅ om te bevestigen.`;
+      const msg = `📄 Nieuw document ontvangen\n${title}\n\nStuur ✅ (of reageer met ✅) om een automatische AI-samenvatting te ontvangen.`;
       const sentTimestamp = await this.sendSignal(phone, msg);
 
       await this.notifRepo.save(
@@ -159,7 +161,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         await this.notifRepo.save(notif);
 
         this.logger.log(`✅ received from ${senderPhone} for document: ${doc.title}`);
-        await this.sendSignal(senderPhone, `⏳ Bezig met samenvatten van *${doc.title}*...`);
+        await this.sendSignal(senderPhone, `⏳ Bezig met samenvatten...\n${doc.title}`);
 
         await this.queue.add('summarize', {
           documentId: doc.id,
@@ -193,7 +195,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
 
     const reply = remove
       ? '✅ Je 2e nummer is verwijderd.'
-      : `✅ Je 2e nummer is ingesteld op *${newPhone2}*.\nDat nummer ontvangt voortaan ook document-meldingen.`;
+      : `✅ Je 2e nummer is ingesteld op ${newPhone2}.\nDat nummer ontvangt voortaan ook document-meldingen.`;
     await this.sendSignal(senderPhone, reply);
     this.logger.log(`phone2 ${remove ? 'removed' : 'set to ' + newPhone2} for user ${user.username}`);
   }
@@ -236,13 +238,28 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   private helpText(): string {
-    return (
-      `📋 *CollaBrains hulp*\n\n` +
-      `✅ – Bevestig samenvatting van nieuw document\n` +
-      `*/phone2 +316xxxxxxxx* – Koppel een 2e nummer (bijv. partner)\n` +
-      `*/phone2 verwijder* – Verwijder je 2e nummer\n` +
-      `*/help* – Dit bericht weergeven`
-    );
+    const dashboard = this.portalOrigin ? `${this.portalOrigin}/dashboard` : 'het dashboard';
+    return [
+      `📋 CollaBrains — Overzicht`,
+      ``,
+      `📄 Document samenvatting`,
+      `Zodra Paperless een nieuw document verwerkt, stuur ik je een berichtje. Stuur ✅ als antwoord (of reageer met ✅) om een AI-samenvatting te ontvangen.`,
+      ``,
+      `📞 2e telefoonnummer`,
+      `/phone2 +316xxxxxxxx`,
+      `→ Koppel een 2e nummer aan jouw account (bijv. van je partner). Dat nummer ontvangt dan ook document-meldingen.`,
+      ``,
+      `/phone2 verwijder`,
+      `→ Verwijder je gekoppelde 2e nummer.`,
+      ``,
+      `⚙️ Instellingen`,
+      `Meldingen aan- of uitzetten doe je via het dashboard:`,
+      dashboard,
+      ``,
+      `❓ Commando's`,
+      `/help — dit bericht opnieuw tonen`,
+      `/phone2 — 2e nummer beheren`,
+    ].join('\n');
   }
 
   // BullMQ worker: fetch text from Paperless → Ollama → send via Signal
@@ -254,7 +271,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
 
       const summary = await this.ollama.summarize(text);
 
-      await this.sendSignal(phone, `📋 *Samenvatting: ${title}*\n\n${summary}`);
+      await this.sendSignal(phone, `📋 Samenvatting\n${title}\n\n${summary}`);
 
       await this.summaryRepo.save(
         this.summaryRepo.create({ documentId, content: summary, modelUsed: this.ollama.model }),
@@ -265,7 +282,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       const msg = (err as Error).message;
       this.logger.error(`Summary processing failed: ${msg}`);
-      await this.sendSignal(phone, `❌ Samenvatting mislukt voor *${title}*: ${msg}`);
+      await this.sendSignal(phone, `❌ Samenvatting mislukt voor:\n${title}\n\n${msg}`);
       await this.notifRepo.update(notificationId, { status: 'failed' });
     }
   }

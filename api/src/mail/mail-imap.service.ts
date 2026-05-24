@@ -1,0 +1,267 @@
+// api/src/mail/mail-imap.service.ts
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ImapFlow } from 'imapflow';
+import { simpleParser, AddressObject } from 'mailparser';
+import createDOMPurify from 'dompurify';
+import { JSDOM } from 'jsdom';
+import axios from 'axios';
+import type { MailStats, MailMessage, MailDetail, FolderStat, VacationState } from './mail.dto';
+
+const { window: purifyWindow } = new JSDOM('');
+const DOMPurify = createDOMPurify(purifyWindow as unknown as Window);
+
+@Injectable()
+export class MailImapService {
+  private readonly logger = new Logger(MailImapService.name);
+  private readonly authentikUrl: string;
+  private readonly authentikToken: string;
+  private readonly mailcowUrl: string;
+  private readonly mailcowApiKey: string;
+  private readonly imapHost: string;
+
+  constructor(private readonly config: ConfigService) {
+    this.authentikUrl = config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
+    this.authentikToken = config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '';
+    this.mailcowUrl = config.get('MAILCOW_URL') ?? 'http://nginx-mailcow:8080';
+    this.mailcowApiKey = config.get('MAILCOW_API_KEY') ?? '';
+    this.imapHost = 'nginx-mailcow';
+  }
+
+  // ── Credentials ───────────────────────────────────────────────────────────
+
+  async getCredentials(uid: string): Promise<{ user: string; pass: string }> {
+    const { data: authUser } = await axios.get(
+      `${this.authentikUrl}/api/v3/core/users/${uid}/`,
+      { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
+    );
+
+    const email = authUser.email as string;
+    let password = (authUser.attributes as Record<string, string>)?.mail_imap_password;
+
+    if (!password) {
+      this.logger.log(`No IMAP password stored for ${email} — resetting via Mailcow`);
+      password = `${Math.random().toString(36).slice(2)}Aa1!`;
+      await this.resetMailcowPassword(email, password);
+      await this.storePasswordInAuthentik(uid, authUser.attributes ?? {}, password);
+    }
+
+    return { user: email, pass: password };
+  }
+
+  private async resetMailcowPassword(email: string, password: string): Promise<void> {
+    await axios.post(
+      `${this.mailcowUrl}/api/v1/edit/mailbox`,
+      [{ attr: { password, password2: password }, items: [email] }],
+      { headers: { 'X-API-Key': this.mailcowApiKey }, timeout: 10_000 },
+    );
+  }
+
+  private async storePasswordInAuthentik(
+    uid: string,
+    existingAttrs: Record<string, string>,
+    password: string,
+  ): Promise<void> {
+    await axios.patch(
+      `${this.authentikUrl}/api/v3/core/users/${uid}/`,
+      { attributes: { ...existingAttrs, mail_imap_password: password } },
+      { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
+    );
+  }
+
+  // ── Client factory ────────────────────────────────────────────────────────
+
+  createClient(credentials: { user: string; pass: string }): ImapFlow {
+    return new ImapFlow({
+      host: this.imapHost,
+      port: 143,
+      secure: false,
+      auth: credentials,
+      tls: { rejectUnauthorized: false },
+      logger: false,
+    });
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+
+  async getStats(uid: string): Promise<MailStats> {
+    const creds = await this.getCredentials(uid);
+    const client = this.createClient(creds);
+    await client.connect();
+    try {
+      const allFolders = await client.list();
+      const primary = new Set(['INBOX', 'Sent', 'Drafts', 'Trash']);
+      const folders: FolderStat[] = [];
+      let totalUnread = 0;
+
+      for (const folder of allFolders) {
+        const status = await client.mailboxStatus(folder.path, ['unseen']);
+        const unread = status.unseen ?? 0;
+        if (unread > 0 || primary.has(folder.path) || primary.has(folder.name)) {
+          folders.push({ name: folder.path, unread });
+        }
+        if (folder.name === 'INBOX' || folder.path === 'INBOX') {
+          totalUnread = unread;
+        }
+      }
+
+      return { unread: totalUnread, folders };
+    } finally {
+      await client.logout();
+    }
+  }
+
+  // ── Message list ──────────────────────────────────────────────────────────
+
+  async getMessages(
+    uid: string,
+    folder: string,
+    page: number,
+    limit: number,
+  ): Promise<{ messages: MailMessage[]; total: number }> {
+    const creds = await this.getCredentials(uid);
+    const client = this.createClient(creds);
+    await client.connect();
+    try {
+      const status = await client.mailboxStatus(folder, ['messages']);
+      const total = status.messages ?? 0;
+      if (total === 0) return { messages: [], total: 0 };
+
+      await client.mailboxOpen(folder);
+
+      // Fetch most-recent messages: sequence range (descending)
+      const rangeEnd = total - (page - 1) * limit;
+      const rangeStart = Math.max(1, rangeEnd - limit + 1);
+
+      const messages: MailMessage[] = [];
+      for await (const msg of client.fetch(`${rangeStart}:${rangeEnd}`, {
+        envelope: true,
+        flags: true,
+      })) {
+        const addr = msg.envelope?.from?.[0];
+        messages.push({
+          uid: msg.uid,
+          from: addr ? (addr.name || addr.address || '') : '',
+          subject: msg.envelope?.subject ?? '(no subject)',
+          date: msg.envelope?.date?.toISOString() ?? '',
+          seen: msg.flags.has('\\Seen'),
+          hasAttachment: false,
+        });
+      }
+
+      return { messages: messages.reverse(), total };
+    } finally {
+      await client.logout();
+    }
+  }
+
+  // ── Message detail ────────────────────────────────────────────────────────
+
+  async getMessage(uid: string, folder: string, msgUid: number): Promise<MailDetail> {
+    const creds = await this.getCredentials(uid);
+    const client = this.createClient(creds);
+    await client.connect();
+    try {
+      await client.mailboxOpen(folder);
+      const msg = await client.fetchOne(
+        String(msgUid),
+        { source: true, flags: true, envelope: true },
+        { uid: true },
+      );
+      if (!msg || !msg.source) throw new NotFoundException('Message not found');
+
+      const parsed = await simpleParser(msg.source);
+      const toAddr = parsed.to as AddressObject | undefined;
+      const ccAddr = parsed.cc as AddressObject | undefined;
+
+      return {
+        uid: msgUid,
+        from: parsed.from?.text ?? '',
+        to: toAddr?.text ?? '',
+        cc: ccAddr?.text ?? '',
+        subject: parsed.subject ?? '(no subject)',
+        date: parsed.date?.toISOString() ?? '',
+        seen: msg.flags.has('\\Seen'),
+        bodyHtml: this.sanitizeHtml(parsed.html || ''),
+        bodyText: parsed.text ?? '',
+      };
+    } finally {
+      await client.logout();
+    }
+  }
+
+  sanitizeHtml(html: string): string {
+    return DOMPurify.sanitize(html, {
+      FORBID_TAGS: ['style', 'script', 'iframe', 'form', 'input', 'button', 'meta', 'link'],
+      FORBID_ATTR: ['style', 'onload', 'onerror', 'onclick', 'onmouseover', 'srcset'],
+    });
+  }
+
+  // ── Mark seen ─────────────────────────────────────────────────────────────
+
+  async markSeen(uid: string, folder: string, msgUid: number): Promise<void> {
+    const creds = await this.getCredentials(uid);
+    const client = this.createClient(creds);
+    await client.connect();
+    try {
+      await client.mailboxOpen(folder, { readOnly: false });
+      await client.messageFlagsAdd(String(msgUid), ['\\Seen'], { uid: true });
+    } finally {
+      await client.logout();
+    }
+  }
+
+  // ── Delete / trash ────────────────────────────────────────────────────────
+
+  async deleteMessage(uid: string, folder: string, msgUid: number): Promise<void> {
+    const creds = await this.getCredentials(uid);
+    const client = this.createClient(creds);
+    await client.connect();
+    try {
+      await client.mailboxOpen(folder, { readOnly: false });
+      if (folder.toLowerCase() === 'trash') {
+        await client.messageDelete(String(msgUid), { uid: true });
+      } else {
+        await client.messageMove(String(msgUid), 'Trash', { uid: true });
+      }
+    } finally {
+      await client.logout();
+    }
+  }
+
+  // ── Vacation ──────────────────────────────────────────────────────────────
+
+  async getVacation(uid: string): Promise<VacationState> {
+    const creds = await this.getCredentials(uid);
+    try {
+      const { data } = await axios.get(
+        `${this.mailcowUrl}/api/v1/get/mailbox/${creds.user}`,
+        { headers: { 'X-API-Key': this.mailcowApiKey }, timeout: 10_000 },
+      );
+      return {
+        active: data.vacation_active === '1' || data.vacation_active === 1,
+        subject: data.vacation_subject ?? '',
+        body: data.vacation_body ?? '',
+      };
+    } catch {
+      return { active: false, subject: '', body: '' };
+    }
+  }
+
+  async setVacation(uid: string, active: boolean, subject: string, body: string): Promise<VacationState> {
+    const creds = await this.getCredentials(uid);
+    await axios.post(
+      `${this.mailcowUrl}/api/v1/edit/mailbox`,
+      [{
+        attr: {
+          vacation_active: active ? '1' : '0',
+          vacation_subject: subject,
+          vacation_body: body,
+        },
+        items: [creds.user],
+      }],
+      { headers: { 'X-API-Key': this.mailcowApiKey }, timeout: 10_000 },
+    );
+    return { active, subject, body };
+  }
+}

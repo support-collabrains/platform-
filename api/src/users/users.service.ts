@@ -4,6 +4,7 @@ import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PaperlessService } from './paperless.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -14,6 +15,7 @@ export class UsersService implements OnModuleInit {
   constructor(
     private readonly config: ConfigService,
     private readonly paperlessService: PaperlessService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   onModuleInit() {
@@ -75,6 +77,9 @@ export class UsersService implements OnModuleInit {
       await this.createMailcowMailbox(user.email, user.name);
     }
 
+    await this.notifications.send(
+      `✅ Nieuwe gebruiker aangemaakt: ${user.username} (${user.email})`,
+    );
     this.logger.log(`Onboarding complete: ${user.username}`);
   }
 

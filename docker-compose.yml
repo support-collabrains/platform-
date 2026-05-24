@@ -21,6 +21,7 @@ volumes:
   traefik_certs:
   paperless_data:
   paperless_media:
+  signal_data:
 
 services:
 
@@ -86,12 +87,17 @@ services:
       PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
       PAPERLESS_DATA_DIR: /data/paperless
       AUTHENTIK_WEBHOOK_SECRET: ${AUTHENTIK_WEBHOOK_SECRET}
+      SIGNAL_API_URL: http://signal-api:8080
+      SIGNAL_SENDER: ${SIGNAL_SENDER}
+      SIGNAL_RECIPIENT: ${SIGNAL_RECIPIENT}
     volumes:
       - ./config/traefik:/etc/traefik-dynamic
       - ./data/paperless:/data/paperless
     depends_on:
       db:
         condition: service_healthy
+      signal-api:
+        condition: service_started
     networks:
       - platform
       # Needs mailcow-network to call Mailcow's API during provisioning.
@@ -191,6 +197,16 @@ services:
       - authentik_media:/media
       - authentik_certs:/certs
     depends_on: [authentik-server]
+    networks: [platform]
+
+  # ── Signal CLI REST API ──────────────────────────────────────────────────
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    restart: unless-stopped
+    environment:
+      MODE: native
+    volumes:
+      - signal_data:/home/.local/share/signal-cli
     networks: [platform]
 
   # ── Paperless-ngx ────────────────────────────────────────────────────────

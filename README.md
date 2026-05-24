@@ -123,6 +123,17 @@ When Paperless-ngx consumes a new document:
 
 Ollama runs entirely on the VPS — no external AI API calls.
 
+### User dashboard
+Every logged-in user has a personal dashboard at `https://portal.<PRIMARY_DOMAIN>/dashboard`:
+
+- **Recent documents** — last 10 documents from Paperless-ngx, filtered to the user's own files
+- **Notification log** — history of Signal prompts and AI summary jobs for the user's document inbox
+- **Preferences** — toggle Signal notifications on/off per-user; digest mode toggle (active in a future release)
+
+Each section loads independently via `<Suspense>` — if Paperless is unreachable, the other sections still render. Preference changes apply immediately via optimistic UI with rollback on failure.
+
+The dashboard uses service-to-service authentication: the portal injects `X-Internal-Secret` and `X-Authentik-Uid` into every API call — the browser never sees the internal secret.
+
 ### Backups
 A cron-based backup container runs daily at 03:00 and stores compressed archives in `./backups/YYYY-MM-DD/`:
 
@@ -150,6 +161,7 @@ platform-/
 │       │   └── integrations/     Authentik, Mailcow, Traefik clients
 │       ├── admin/                User CRUD (portal admin panel)
 │       ├── users/                Authentik webhook → onboarding
+│       ├── users-me/             Personal dashboard API (documents, notifications, preferences)
 │       ├── documents/            Paperless → Signal → Ollama pipeline
 │       │   ├── documents.service.ts   BullMQ queue, Signal poller, job worker
 │       │   ├── ollama.service.ts      Summarization + model pull
@@ -159,6 +171,10 @@ platform-/
 ├── portal/                       Next.js portal
 │   ├── app/setup/page.tsx        5-step onboarding wizard
 │   ├── app/users/page.tsx        Admin user management
+│   ├── app/dashboard/            Personal user dashboard
+│   │   ├── page.tsx              Server component (docs, notifications, preferences)
+│   │   └── components/           DocumentsList, NotificationLog, PreferencesPanel, PreferenceToggle
+│   ├── app/api/me/               Next.js API routes (proxy to NestJS /users/me/*)
 │   └── lib/api.ts                API client
 ├── scripts/
 │   ├── backup.sh                 Daily backup script (runs in backup container)
@@ -205,6 +221,16 @@ platform-/
 |---|---|---|
 | `POST` | `/documents/consumed` | Called by Paperless post-consume script |
 
+### User (personal)
+All `/users/me/*` endpoints require `X-Internal-Secret` (set by the portal server-side) and `X-Authentik-Uid` (numeric Authentik pk).
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/users/me/documents` | Last 10 Paperless docs for the authenticated user |
+| `GET` | `/users/me/notifications` | Last 20 Signal notification records for the user's phones |
+| `GET` | `/users/me/preferences` | `{ signal_doc_notify, signal_digest_mode }` |
+| `PATCH` | `/users/me/preferences` | Update preferences (merged into Authentik attributes) |
+
 ---
 
 ## Environment variables
@@ -219,6 +245,7 @@ Key variables in `.env` (see `.env.example` for the full list):
 | `SIGNAL_RECIPIENT` | Admin's Signal number for system notifications |
 | `OLLAMA_MODEL` | Ollama model for document summaries (default: `mistral`) |
 | `PAPERLESS_API_TOKEN` | Paperless admin API token (used by the API to fetch document text) |
+| `INTERNAL_API_SECRET` | 64-char shared secret between portal and API for `/users/me/*` routes |
 
 ---
 

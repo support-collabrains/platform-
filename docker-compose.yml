@@ -92,6 +92,7 @@ services:
       SIGNAL_API_URL: http://signal-api:8080
       SIGNAL_SENDER: ${SIGNAL_SENDER}
       SIGNAL_RECIPIENT: ${SIGNAL_RECIPIENT}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       QUEUE_REDIS_URL: redis://queue-redis:6379
       OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
@@ -129,6 +130,7 @@ services:
       NEXT_PUBLIC_API_URL: https://portal.${PRIMARY_DOMAIN}/api
       INTERNAL_API_URL: http://api:3001
       AUTHENTIK_WEBHOOK_SECRET: ${AUTHENTIK_WEBHOOK_SECRET}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
     depends_on: [api]
     networks: [platform]
     labels:

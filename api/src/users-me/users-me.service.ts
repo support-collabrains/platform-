@@ -1,0 +1,122 @@
+import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
+import axios from 'axios';
+import { DocDocument, DocNotification } from '../documents/document.entity';
+
+export interface UserPreferences {
+  signal_doc_notify: boolean;
+  signal_digest_mode: boolean;
+}
+
+interface AuthentikUser {
+  pk: number;
+  username: string;
+  attributes: Record<string, string>;
+}
+
+interface PaperlessDoc {
+  id: number;
+  title: string;
+  created: string;
+}
+
+interface NotificationRow {
+  id: string;
+  documentId: string;
+  documentTitle: string;
+  phone: string;
+  status: string;
+  createdAt: Date;
+}
+
+@Injectable()
+export class UsersMeService {
+  private readonly authentikUrl: string;
+  private readonly authentikToken: string;
+  private readonly paperlessUrl: string;
+  private readonly paperlessToken: string;
+
+  constructor(
+    private readonly config: ConfigService,
+    @InjectRepository(DocDocument) private readonly docRepo: Repository<DocDocument>,
+    @InjectRepository(DocNotification) private readonly notifRepo: Repository<DocNotification>,
+  ) {
+    this.authentikUrl = config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
+    this.authentikToken = config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '';
+    this.paperlessUrl = config.get('PAPERLESS_INTERNAL_URL') ?? 'http://paperless:8000';
+    this.paperlessToken = config.get('PAPERLESS_API_TOKEN') ?? '';
+  }
+
+  async resolveUser(uid: string): Promise<AuthentikUser> {
+    const { data } = await axios.get<AuthentikUser>(
+      `${this.authentikUrl}/api/v3/core/users/${uid}/`,
+      { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
+    );
+    return data;
+  }
+
+  async getDocuments(username: string): Promise<PaperlessDoc[]> {
+    try {
+      const { data } = await axios.get(`${this.paperlessUrl}/api/documents/`, {
+        headers: { Authorization: `Token ${this.paperlessToken}` },
+        params: { owner__username: username, ordering: '-created', page_size: 10 },
+        timeout: 10_000,
+      });
+      return (data.results as PaperlessDoc[]) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  async getNotifications(phones: string[]): Promise<NotificationRow[]> {
+    if (!phones.length) return [];
+
+    const notifs = await this.notifRepo.find({
+      where: { phone: In(phones) },
+      order: { createdAt: 'DESC' },
+      take: 20,
+    });
+
+    const docIds = [...new Set(notifs.map((n) => n.documentId))];
+    const docs = docIds.length ? await this.docRepo.findBy({ id: In(docIds) }) : [];
+    const docMap = new Map(docs.map((d) => [d.id, d.title]));
+
+    return notifs.map((n) => ({
+      id: n.id,
+      documentId: n.documentId,
+      documentTitle: docMap.get(n.documentId) ?? '—',
+      phone: n.phone,
+      status: n.status,
+      createdAt: n.createdAt,
+    }));
+  }
+
+  parsePreferences(attributes: Record<string, string>): UserPreferences {
+    return {
+      signal_doc_notify: attributes.signal_doc_notify !== 'false',
+      signal_digest_mode: attributes.signal_digest_mode === 'true',
+    };
+  }
+
+  async updatePreferences(uid: string, prefs: Partial<UserPreferences>): Promise<void> {
+    const user = await this.resolveUser(uid);
+    const attrs: Record<string, string> = { ...user.attributes };
+
+    if (prefs.signal_doc_notify !== undefined)
+      attrs.signal_doc_notify = String(prefs.signal_doc_notify);
+    if (prefs.signal_digest_mode !== undefined)
+      attrs.signal_digest_mode = String(prefs.signal_digest_mode);
+
+    await axios.patch(
+      `${this.authentikUrl}/api/v3/core/users/${uid}/`,
+      { attributes: attrs },
+      { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
+    );
+  }
+
+  getPhonesFromAttributes(attributes: Record<string, string>): string[] {
+    return [attributes.phone, attributes.phone2].filter((p): p is string => !!p?.startsWith('+'));
+  }
+}

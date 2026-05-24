@@ -7,6 +7,8 @@ import { UsersModule } from './users/users.module';
 import { AdminModule } from './admin/admin.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
+import { DocDocument, DocNotification, DocSummary } from './documents/document.entity';
+import { DocumentsModule } from './documents/documents.module';
 
 @Module({
   imports: [
@@ -17,7 +19,7 @@ import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        entities: [OnboardingEvent],
+        entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary],
         synchronize: true, // auto-creates onboarding_events table on first boot
         ssl: config.get('DATABASE_SSL') === 'true' ? { rejectUnauthorized: false } : false,
       }),
@@ -26,6 +28,7 @@ import { OnboardingEvent } from './bootstrap/onboarding-event.entity';
     UsersModule,
     AdminModule,
     NotificationsModule,
+    DocumentsModule,
   ],
 })
 export class AppModule {}

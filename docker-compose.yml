@@ -23,6 +23,7 @@ volumes:
   paperless_media:
   signal_data:
   backup_data:
+  ollama_data:
 
 services:
 
@@ -91,6 +92,9 @@ services:
       SIGNAL_API_URL: http://signal-api:8080
       SIGNAL_SENDER: ${SIGNAL_SENDER}
       SIGNAL_RECIPIENT: ${SIGNAL_RECIPIENT}
+      QUEUE_REDIS_URL: redis://queue-redis:6379
+      OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
     volumes:
       - ./config/traefik:/etc/traefik-dynamic
       - ./data/paperless:/data/paperless
@@ -98,6 +102,8 @@ services:
       db:
         condition: service_healthy
       signal-api:
+        condition: service_started
+      queue-redis:
         condition: service_started
     networks:
       - platform
@@ -300,11 +306,13 @@ services:
       PAPERLESS_DISABLE_REGULAR_LOGIN: "true"
       PAPERLESS_CSRF_TRUSTED_ORIGINS: "https://docs.${PRIMARY_DOMAIN}"
       PAPERLESS_SOCIAL_ACCOUNT_ALLOW_REGISTRATION: "true"
+      PAPERLESS_POST_CONSUME_SCRIPT: /usr/src/paperless/scripts/post_consume.sh
     volumes:
       - paperless_data:/usr/src/paperless/data
       - paperless_media:/usr/src/paperless/media
       - ./data/paperless/export:/usr/src/paperless/export
       - ./data/paperless/consume:/usr/src/paperless/consume
+      - ./scripts/paperless-post-consume.sh:/usr/src/paperless/scripts/post_consume.sh:ro
     networks:
       - platform
       - mailcow-network
@@ -315,3 +323,17 @@ services:
       - "traefik.http.routers.paperless.entrypoints=websecure"
       - "traefik.http.routers.paperless.tls.certresolver=letsencrypt"
       - "traefik.http.services.paperless.loadbalancer.server.port=8000"
+
+  # ── BullMQ Redis ─────────────────────────────────────────────────────────
+  queue-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+
+  # ── Ollama (local LLM for document summaries) ────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [platform]

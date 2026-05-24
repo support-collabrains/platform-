@@ -58,8 +58,11 @@ export class AdminService {
     }
 
     const { data: stageData } = await api.get('/api/v3/stages/identification/');
-    for (const stage of stageData.results as Array<{ pk: string }>) {
-      await api.patch(`/api/v3/stages/identification/${stage.pk}/`, { submit_label: 'Sign-In' });
+    for (const stage of stageData.results as Array<Record<string, unknown>>) {
+      await api.patch(`/api/v3/stages/identification/${stage.pk}/`, {
+        ...stage,
+        submit_label: 'Sign-In',
+      });
     }
 
     this.logger.log('Applied CollaBrains branding to live Authentik instance');

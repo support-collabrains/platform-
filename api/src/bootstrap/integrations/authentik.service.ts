@@ -145,8 +145,11 @@ export class AuthentikService {
   private async updateSignInLabel(api: ReturnType<typeof axios.create>) {
     try {
       const { data } = await api.get('/api/v3/stages/identification/');
-      for (const stage of data.results as Array<{ pk: string }>) {
-        await api.patch(`/api/v3/stages/identification/${stage.pk}/`, { submit_label: 'Sign-In' });
+      for (const stage of data.results as Array<Record<string, unknown>>) {
+        await api.patch(`/api/v3/stages/identification/${stage.pk}/`, {
+          ...stage,
+          submit_label: 'Sign-In',
+        });
       }
       this.logger.log('Updated identification stage submit label to Sign-In');
     } catch (err) {

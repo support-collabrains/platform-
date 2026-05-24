@@ -10,7 +10,8 @@ import axios from 'axios';
 import type { MailStats, MailMessage, MailDetail, FolderStat, VacationState } from './mail.dto';
 
 const { window: purifyWindow } = new JSDOM('');
-const DOMPurify = createDOMPurify(purifyWindow as unknown as Window);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const DOMPurify = createDOMPurify(purifyWindow as any);
 
 @Injectable()
 export class MailImapService {
@@ -96,7 +97,7 @@ export class MailImapService {
       let totalUnread = 0;
 
       for (const folder of allFolders) {
-        const status = await client.mailboxStatus(folder.path, ['unseen']);
+        const status = await client.status(folder.path, { unseen: true });
         const unread = status.unseen ?? 0;
         if (unread > 0 || primary.has(folder.path) || primary.has(folder.name)) {
           folders.push({ name: folder.path, unread });
@@ -124,7 +125,7 @@ export class MailImapService {
     const client = this.createClient(creds);
     await client.connect();
     try {
-      const status = await client.mailboxStatus(folder, ['messages']);
+      const status = await client.status(folder, { messages: true });
       const total = status.messages ?? 0;
       if (total === 0) return { messages: [], total: 0 };
 
@@ -146,7 +147,7 @@ export class MailImapService {
           from: addr ? (addr.name || addr.address || '') : '',
           subject: msg.envelope?.subject ?? '(no subject)',
           date: msg.envelope?.date?.toISOString() ?? '',
-          seen: msg.flags.has('\\Seen'),
+          seen: msg.flags?.has('\\Seen') ?? false,
           hasAttachment: false,
         });
       }
@@ -183,7 +184,7 @@ export class MailImapService {
         cc: ccAddr?.text ?? '',
         subject: parsed.subject ?? '(no subject)',
         date: parsed.date?.toISOString() ?? '',
-        seen: msg.flags.has('\\Seen'),
+        seen: msg.flags?.has('\\Seen') ?? false,
         bodyHtml: this.sanitizeHtml(parsed.html || ''),
         bodyText: parsed.text ?? '',
       };

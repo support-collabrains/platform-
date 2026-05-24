@@ -85,6 +85,9 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     const doc = await this.docRepo.save(this.docRepo.create({ paperlessId, owner, title }));
     this.logger.log(`New document consumed: ${title} (paperless #${paperlessId}, owner: ${owner})`);
 
+    // Trigger paperless-gpt AI classification in background
+    this.tagDocumentForGpt(paperlessId).catch(() => {});
+
     const { phones, signalDocNotify } = await this.getPhonesAndPrefsForUser(owner);
     if (!signalDocNotify) {
       this.logger.log(`Signal notifications disabled for ${owner} — skipping`);
@@ -285,6 +288,37 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
       await this.sendSignal(phone, `❌ Samenvatting mislukt voor:\n${title}\n\n${msg}`);
       await this.notifRepo.update(notificationId, { status: 'failed' });
     }
+  }
+
+  private async tagDocumentForGpt(paperlessId: number): Promise<void> {
+    const tagId = await this.getOrCreatePaperlessTag('paperless-gpt', '#7B8CDE');
+    const { data: doc } = await axios.get(
+      `${this.paperlessUrl}/api/documents/${paperlessId}/`,
+      { headers: { Authorization: `Token ${this.paperlessToken}` }, timeout: 10_000 },
+    );
+    const existingTags = (doc.tags as number[]) ?? [];
+    if (existingTags.includes(tagId)) return;
+    await axios.patch(
+      `${this.paperlessUrl}/api/documents/${paperlessId}/`,
+      { tags: [...existingTags, tagId] },
+      { headers: { Authorization: `Token ${this.paperlessToken}` }, timeout: 10_000 },
+    );
+    this.logger.log(`Tagged document #${paperlessId} for paperless-gpt processing`);
+  }
+
+  private async getOrCreatePaperlessTag(name: string, colour: string): Promise<number> {
+    const { data } = await axios.get(
+      `${this.paperlessUrl}/api/tags/?name=${encodeURIComponent(name)}`,
+      { headers: { Authorization: `Token ${this.paperlessToken}` }, timeout: 10_000 },
+    );
+    if ((data.count as number) > 0) return (data.results[0] as { id: number }).id;
+    const { data: created } = await axios.post(
+      `${this.paperlessUrl}/api/tags/`,
+      { name, colour },
+      { headers: { Authorization: `Token ${this.paperlessToken}` }, timeout: 10_000 },
+    );
+    this.logger.log(`Created Paperless tag "${name}" (id: ${(created as { id: number }).id})`);
+    return (created as { id: number }).id;
   }
 
   private async fetchDocumentText(paperlessId: number): Promise<string> {

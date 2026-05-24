@@ -339,3 +339,21 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     networks: [platform]
+
+  # ── paperless-gpt (AI auto-tagging via Ollama) ───────────────────────────
+  paperless-gpt:
+    image: ghcr.io/icereed/paperless-gpt:latest
+    restart: unless-stopped
+    environment:
+      PAPERLESS_BASE_URL: http://paperless:8000
+      PAPERLESS_API_TOKEN: ${PAPERLESS_API_TOKEN}
+      LLM_PROVIDER: ollama
+      OLLAMA_HOST: http://ollama:11434
+      LLM_MODEL: ${OLLAMA_MODEL:-mistral}
+      LLM_LANGUAGE: Dutch
+      MANUAL_TAG: paperless-gpt
+      AUTO_PROCESS_DOCUMENTS: "true"
+    depends_on:
+      - paperless
+      - ollama
+    networks: [platform]

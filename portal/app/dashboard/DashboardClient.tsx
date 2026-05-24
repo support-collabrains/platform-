@@ -46,7 +46,7 @@ function formatTime(dateStr: string): string {
   return date.toLocaleDateString('nl-NL');
 }
 
-export default function DashboardClient({ username }: { username: string }) {
+export default function DashboardClient({ username, isAdmin = false }: { username: string; isAdmin?: boolean }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -97,7 +97,10 @@ export default function DashboardClient({ username }: { username: string }) {
             </div>
             <div>
               <h1 className="font-bold text-lg text-slate-100">CollaBrains</h1>
-              <p className="text-xs text-slate-400">Welkom, {username}</p>
+              <p className="text-xs text-slate-400">
+              Welkom, {username}
+              {isAdmin && <span className="ml-2 text-orange-400 font-medium">admin</span>}
+            </p>
             </div>
           </div>
           <div className="flex items-center gap-4">

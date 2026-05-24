@@ -58,11 +58,10 @@ export class AdminService {
     }
 
     const { data: stageData } = await api.get('/api/v3/stages/identification/');
-    for (const stage of stageData.results as Array<Record<string, unknown>>) {
-      await api.patch(`/api/v3/stages/identification/${stage.pk}/`, {
-        ...stage,
-        submit_label: 'Sign-In',
-      });
+    for (const s of stageData.results as Array<Record<string, unknown>>) {
+      // Omit read-only fields so Authentik doesn't try to re-create nested objects
+      const { pk, component, verbose_name, verbose_name_plural, meta_model_name, flow_set, ...writable } = s;
+      await api.patch(`/api/v3/stages/identification/${pk}/`, { ...writable, submit_label: 'Sign-In' });
     }
 
     this.logger.log('Applied CollaBrains branding to live Authentik instance');

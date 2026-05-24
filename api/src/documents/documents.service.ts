@@ -104,7 +104,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  // Polls Signal for incoming ✅ messages and queues summary jobs
+  // Polls Signal for incoming messages and handles commands + ✅ approvals
   private async pollSignal(): Promise<void> {
     if (!this.signalSender) return;
     try {
@@ -120,18 +120,32 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         if (!envelope) continue;
 
         const senderPhone: string = envelope.sourceNumber ?? envelope.source ?? '';
-        const text: string = envelope.dataMessage?.message ?? '';
+        const text: string = (envelope.dataMessage?.message ?? '').trim();
         const reaction: string = envelope.dataMessage?.reaction?.emoji ?? '';
 
-        const isApproval = text.includes('✅') || reaction === '✅';
-        if (!isApproval || !senderPhone) continue;
+        if (!senderPhone) continue;
 
-        // Find oldest pending notification for this phone
+        // /help
+        if (/^\/help$/i.test(text)) {
+          await this.sendSignal(senderPhone, this.helpText());
+          continue;
+        }
+
+        // /phone2 <number> or /phone2 verwijder
+        const phone2Match = text.match(/^\/phone2\s+(.+)$/i);
+        if (phone2Match) {
+          await this.handleSetPhone2(senderPhone, phone2Match[1].trim());
+          continue;
+        }
+
+        // ✅ — queue summary
+        const isApproval = text.includes('✅') || reaction === '✅';
+        if (!isApproval) continue;
+
         const notif = await this.notifRepo.findOne({
           where: { phone: senderPhone, status: 'pending' },
           order: { createdAt: 'ASC' },
         });
-
         if (!notif) continue;
 
         const doc = await this.docRepo.findOne({ where: { id: notif.documentId } });
@@ -154,6 +168,77 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       this.logger.warn(`Signal poll error: ${(err as Error).message}`);
     }
+  }
+
+  private async handleSetPhone2(senderPhone: string, arg: string): Promise<void> {
+    const user = await this.findUserByPhone(senderPhone);
+    if (!user) {
+      await this.sendSignal(senderPhone, '❌ Geen account gevonden voor dit nummer.');
+      return;
+    }
+
+    const remove = /^verwijder$/i.test(arg);
+    const newPhone2 = remove ? null : arg;
+
+    if (!remove && !newPhone2?.startsWith('+')) {
+      await this.sendSignal(senderPhone, '❌ Ongeldig nummer. Gebruik het internationale formaat: +316xxxxxxxx');
+      return;
+    }
+
+    await this.updateUserPhone2(user.pk, user.attributes, newPhone2);
+
+    const reply = remove
+      ? '✅ Je 2e nummer is verwijderd.'
+      : `✅ Je 2e nummer is ingesteld op *${newPhone2}*.\nDat nummer ontvangt voortaan ook document-meldingen.`;
+    await this.sendSignal(senderPhone, reply);
+    this.logger.log(`phone2 ${remove ? 'removed' : 'set to ' + newPhone2} for user ${user.username}`);
+  }
+
+  private async findUserByPhone(
+    phone: string,
+  ): Promise<{ pk: number; username: string; attributes: Record<string, string> } | null> {
+    try {
+      const { data } = await axios.get(`${this.authentikUrl}/api/v3/core/users/`, {
+        headers: { Authorization: `Bearer ${this.authentikToken}` },
+        params: { type: 'internal', page_size: 100 },
+        timeout: 8_000,
+      });
+      const user = (data.results as Array<{ pk: number; username: string; attributes?: Record<string, string> }>).find(
+        (u) => u.attributes?.phone === phone || u.attributes?.phone2 === phone,
+      );
+      if (!user) return null;
+      return { pk: user.pk, username: user.username, attributes: user.attributes ?? {} };
+    } catch {
+      return null;
+    }
+  }
+
+  private async updateUserPhone2(
+    pk: number,
+    currentAttributes: Record<string, string>,
+    phone2: string | null,
+  ): Promise<void> {
+    const attributes: Record<string, string> = { ...currentAttributes };
+    if (phone2) {
+      attributes.phone2 = phone2;
+    } else {
+      delete attributes.phone2;
+    }
+    await axios.patch(
+      `${this.authentikUrl}/api/v3/core/users/${pk}/`,
+      { attributes },
+      { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
+    );
+  }
+
+  private helpText(): string {
+    return (
+      `📋 *CollaBrains hulp*\n\n` +
+      `✅ – Bevestig samenvatting van nieuw document\n` +
+      `*/phone2 +316xxxxxxxx* – Koppel een 2e nummer (bijv. partner)\n` +
+      `*/phone2 verwijder* – Verwijder je 2e nummer\n` +
+      `*/help* – Dit bericht weergeven`
+    );
   }
 
   // BullMQ worker: fetch text from Paperless → Ollama → send via Signal

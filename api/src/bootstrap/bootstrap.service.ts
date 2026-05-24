@@ -87,6 +87,15 @@ export class BootstrapService implements OnModuleInit {
       if (rows.length > 0) {
         this.logger.log(`Restored ${rows.length} events from DB, state=${this.currentState}`);
       }
+      if (this.currentState === BootstrapState.READY && !this.systemConfig) {
+        this.systemConfig = {
+          primaryDomain: process.env.PRIMARY_DOMAIN ?? '',
+          mailDomain: process.env.MAIL_DOMAIN ?? '',
+          adminEmail: process.env.ADMIN_EMAIL ?? '',
+          hostname: process.env.PRIMARY_DOMAIN ?? '',
+          timezone: process.env.TIMEZONE ?? 'UTC',
+        };
+      }
     } catch (err) {
       this.logger.warn(`Could not restore state from DB: ${(err as Error).message}`);
     }

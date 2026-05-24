@@ -166,18 +166,25 @@ function Dashboard({ domain, mailDomain }: { domain: string; mailDomain: string 
             sub={`auth.${domain}`}
           />
         )}
-        {mailDomain && (
+        {domain && (
           <ServiceLink
-            href={`https://${mailDomain}`}
-            label="Webmail (SOGo)"
-            sub={mailDomain}
+            href={`https://docs.${domain}`}
+            label="Documents (Paperless)"
+            sub={`docs.${domain}`}
           />
         )}
         {mailDomain && (
           <ServiceLink
-            href={`https://${mailDomain}/admin`}
+            href={`https://mail.${mailDomain}`}
+            label="Webmail (SOGo)"
+            sub={`mail.${mailDomain}`}
+          />
+        )}
+        {mailDomain && (
+          <ServiceLink
+            href={`https://mail.${mailDomain}/admin`}
             label="Mail admin"
-            sub={`${mailDomain}/admin`}
+            sub={`mail.${mailDomain}/admin`}
           />
         )}
       </div>

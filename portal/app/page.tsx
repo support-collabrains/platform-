@@ -171,12 +171,12 @@ function Dashboard({ domain, mailDomain }: { domain: string; mailDomain: string 
           <ExternalLink size={16} className="text-emerald-300 group-hover:text-emerald-600 transition" />
         </Link>
         <Link
-          href="/users"
+          href="/admin"
           className="flex items-center justify-between p-3 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition group"
         >
           <div className="flex items-center gap-2">
             <Users size={16} className="text-blue-600" />
-            <div className="text-sm font-medium text-blue-800">Gebruikersbeheer</div>
+            <div className="text-sm font-medium text-blue-800">Beheerdersinstellingen</div>
           </div>
           <ExternalLink size={16} className="text-blue-300 group-hover:text-blue-600 transition" />
         </Link>

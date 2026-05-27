@@ -2,8 +2,10 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
+import * as mysql2 from 'mysql2/promise';
 import { ImapFlow } from 'imapflow';
-import { simpleParser, AddressObject } from 'mailparser';
+import { simpleParser } from 'mailparser';
 import createDOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 import axios from 'axios';
@@ -21,6 +23,7 @@ export class MailImapService {
   private readonly mailcowUrl: string;
   private readonly mailcowApiKey: string;
   private readonly imapHost: string;
+  private readonly mailcowDb: { host: string; database: string; user: string; password: string };
 
   constructor(private readonly config: ConfigService) {
     this.authentikUrl = config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
@@ -28,6 +31,12 @@ export class MailImapService {
     this.mailcowUrl = config.get('MAILCOW_URL') ?? 'http://nginx-mailcow:8080';
     this.mailcowApiKey = config.get('MAILCOW_API_KEY') ?? '';
     this.imapHost = config.get('IMAP_HOST') ?? 'dovecot-mailcow';
+    this.mailcowDb = {
+      host: config.get('MAILCOW_DB_HOST') ?? 'mysql-mailcow',
+      database: config.get('MAILCOW_DB_NAME') ?? 'mailcow',
+      user: config.get('MAILCOW_DB_USER') ?? 'mailcow',
+      password: config.get('MAILCOW_DB_PASS') ?? '',
+    };
   }
 
   // ── Credentials ───────────────────────────────────────────────────────────
@@ -54,11 +63,21 @@ export class MailImapService {
   }
 
   private async resetMailcowPassword(email: string, password: string): Promise<void> {
-    await axios.post(
-      `${this.mailcowUrl}/api/v1/edit/mailbox`,
-      [{ attr: { password, password2: password }, items: [email] }],
-      { headers: { 'X-API-Key': this.mailcowApiKey }, timeout: 10_000 },
-    );
+    const hash = await bcrypt.hash(password, 10);
+    const conn = await mysql2.createConnection({
+      host: this.mailcowDb.host,
+      database: this.mailcowDb.database,
+      user: this.mailcowDb.user,
+      password: this.mailcowDb.password,
+    });
+    try {
+      await conn.execute(
+        'UPDATE mailbox SET password = ? WHERE username = ?',
+        [`{BLF-CRYPT}${hash}`, email],
+      );
+    } finally {
+      await conn.end();
+    }
   }
 
   private async storePasswordInAuthentik(

@@ -79,6 +79,10 @@ services:
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
       MAILCOW_URL: http://nginx-mailcow:8080
       MAILCOW_API_KEY: ${MAILCOW_API_KEY:-}
+      MAILCOW_DB_HOST: mysql-mailcow
+      MAILCOW_DB_NAME: mailcow
+      MAILCOW_DB_USER: mailcow
+      MAILCOW_DB_PASS: ${MAILCOW_DB_PASS:-}
       TRAEFIK_CONFIG_DIR: /etc/traefik-dynamic
       PRIMARY_DOMAIN: ${PRIMARY_DOMAIN}
       MAIL_DOMAIN: ${MAIL_DOMAIN}

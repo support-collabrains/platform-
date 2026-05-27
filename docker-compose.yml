@@ -117,7 +117,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=platform"
-      - "traefik.http.routers.api.rule=Host(`portal.${PRIMARY_DOMAIN}`) && PathPrefix(`/api`) && !PathPrefix(`/api/admin`)"
+      - "traefik.http.routers.api.rule=Host(`portal.${PRIMARY_DOMAIN}`) && PathPrefix(`/api`) && !PathPrefix(`/api/admin`) && !PathPrefix(`/api/me`)"
       - "traefik.http.routers.api.entrypoints=websecure"
       - "traefik.http.routers.api.tls.certresolver=letsencrypt"
       - "traefik.http.routers.api.middlewares=api-strip"

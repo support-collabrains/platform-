@@ -74,7 +74,7 @@ export class UsersMeService {
     try {
       const { data } = await axios.get(`${this.paperlessUrl}/api/documents/`, {
         headers: { Authorization: `Token ${this.paperlessToken}` },
-        params: { owner__username: username, ordering: '-created', page_size: 10 },
+        params: { ordering: '-created', page_size: 50 },
         timeout: 10_000,
       });
       return (data.results as PaperlessDoc[]) ?? [];

@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, Trash2 } from 'lucide-react';
+import { useT } from '../LangContext';
 
 interface FolderStat { name: string; unread: number }
 interface MailMessage {
@@ -26,6 +27,7 @@ function fmt(date: string) {
 }
 
 export default function MailClient() {
+  const t = useT();
   const [folder, setFolder] = useState('INBOX');
   const [folderStats, setFolderStats] = useState<FolderStat[]>([]);
   const [messages, setMessages] = useState<MailMessage[]>([]);
@@ -54,18 +56,18 @@ export default function MailClient() {
       const r = await fetch(
         `/api/me/mail/messages?folder=${encodeURIComponent(f)}&page=${p}&limit=${PAGE_SIZE}`
       );
-      if (!r.ok) { setError('Kon berichten niet laden'); return; }
+      if (!r.ok) { setError(t.mailLoadError); return; }
       const { messages: msgs, total: tot } = await r.json() as {
         messages: MailMessage[]; total: number;
       };
       setMessages(msgs);
       setTotal(tot);
     } catch {
-      setError('Verbindingsfout');
+      setError(t.mailConnectionError);
     } finally {
       setLoadingList(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
   useEffect(() => { fetchMessages(folder, page); }, [folder, page, fetchMessages]);
@@ -182,7 +184,7 @@ export default function MailClient() {
               </div>
             ) : messages.length === 0 ? (
               <div className="flex items-center justify-center py-16 text-slate-600 text-sm">
-                Geen berichten
+                {t.mailNoMessages}
               </div>
             ) : (
               messages.map(msg => (
@@ -197,12 +199,12 @@ export default function MailClient() {
                 >
                   <div className="flex items-start justify-between gap-2">
                     <span className={`text-sm truncate ${msg.seen ? 'text-slate-500' : 'text-slate-100 font-semibold'}`}>
-                      {msg.from || '(onbekend)'}
+                      {msg.from || t.mailUnknown}
                     </span>
                     <span className="text-[11px] text-slate-600 shrink-0">{fmt(msg.date)}</span>
                   </div>
                   <p className={`text-sm truncate mt-0.5 ${msg.seen ? 'text-slate-600' : 'text-slate-400'}`}>
-                    {msg.subject || '(geen onderwerp)'}
+                    {msg.subject || t.mailNoSubject}
                   </p>
                 </button>
               ))
@@ -234,7 +236,7 @@ export default function MailClient() {
         {/* Detail panel — full-screen on mobile, right column on md+ */}
         {loadingDetail ? (
           <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
-            Laden…
+            {t.mailLoading}
           </div>
         ) : selected ? (
           <div className="flex flex-col flex-1 min-w-0 bg-slate-900 overflow-hidden">
@@ -249,20 +251,20 @@ export default function MailClient() {
                   <ArrowLeft size={18} />
                 </button>
                 <h2 className="flex-1 text-sm font-semibold text-slate-100 truncate">
-                  {selected.subject || '(geen onderwerp)'}
+                  {selected.subject || t.mailNoSubject}
                 </h2>
                 <button
                   onClick={() => deleteMessage(selected.uid)}
                   className="p-1 text-slate-500 hover:text-red-400 transition shrink-0"
-                  title={folder === 'Trash' ? 'Definitief verwijderen' : 'Naar prullenbak'}
+                  title={folder === 'Trash' ? t.mailDeleteForever : t.mailMoveToTrash}
                 >
                   <Trash2 size={15} />
                 </button>
               </div>
               <div className="text-xs text-slate-500 space-y-0.5 ml-7 md:ml-0">
-                <div><span className="text-slate-600">Van:</span> {selected.from}</div>
-                <div><span className="text-slate-600">Aan:</span> {selected.to}</div>
-                {selected.cc && <div><span className="text-slate-600">CC:</span> {selected.cc}</div>}
+                <div><span className="text-slate-600">{t.mailFrom}</span> {selected.from}</div>
+                <div><span className="text-slate-600">{t.mailTo}</span> {selected.to}</div>
+                {selected.cc && <div><span className="text-slate-600">{t.mailCc}</span> {selected.cc}</div>}
                 <div>{new Date(selected.date).toLocaleString('nl-NL')}</div>
               </div>
             </div>
@@ -278,7 +280,7 @@ export default function MailClient() {
                 />
               ) : (
                 <pre className="p-4 text-sm text-slate-300 whitespace-pre-wrap font-sans overflow-auto h-full">
-                  {selected.bodyText || '(geen inhoud)'}
+                  {selected.bodyText || t.mailNoContent}
                 </pre>
               )}
             </div>
@@ -286,7 +288,7 @@ export default function MailClient() {
         ) : (
           /* Empty state — desktop only */
           <div className="hidden md:flex flex-1 items-center justify-center text-slate-600 text-sm">
-            Selecteer een bericht
+            {t.mailSelectMessage}
           </div>
         )}
       </div>

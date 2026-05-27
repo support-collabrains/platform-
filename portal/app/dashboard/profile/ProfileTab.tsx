@@ -4,6 +4,8 @@
 import { useEffect, useState } from 'react';
 import { Settings, Shield, LogOut } from 'lucide-react';
 import Link from 'next/link';
+import { useT, useLang } from '../LangContext';
+import type { Lang } from '../lang';
 
 interface Preferences {
   signal_doc_notify: boolean;
@@ -40,6 +42,8 @@ export default function ProfileTab({
   email: string;
   isAdmin: boolean;
 }) {
+  const t = useT();
+  const [, setLang] = useLang();
   const [prefs, setPrefs] = useState<Preferences>({
     signal_doc_notify: true,
     signal_digest_mode: false,
@@ -56,6 +60,7 @@ export default function ProfileTab({
 
   async function updatePref<K extends keyof Preferences>(key: K, value: Preferences[K]) {
     setPrefs(prev => ({ ...prev, [key]: value }));
+    if (key === 'language') setLang(value as Lang);
     setSaving(true);
     await fetch('/api/me/preferences', {
       method: 'PATCH',
@@ -83,15 +88,15 @@ export default function ProfileTab({
           <div className="px-4 pt-4 pb-2">
             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
               <Settings size={12} />
-              Meldingen
-              {saving && <span className="text-cyan-400 text-[10px] normal-case tracking-normal ml-1">opslaan…</span>}
+              {t.sectionNotifications}
+              {saving && <span className="text-cyan-400 text-[10px] normal-case tracking-normal ml-1">{t.saving}</span>}
             </h3>
           </div>
           <div className="divide-y divide-slate-700/50">
             <div className="px-4 py-3.5 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-slate-200">Signal-meldingen</p>
-                <p className="text-xs text-slate-500 mt-0.5">Melding bij nieuw document</p>
+                <p className="text-sm text-slate-200">{t.prefSignalNotify}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{t.prefSignalNotifyDesc}</p>
               </div>
               <Toggle
                 checked={prefs.signal_doc_notify}
@@ -100,8 +105,8 @@ export default function ProfileTab({
             </div>
             <div className="px-4 py-3.5 flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-slate-200">Digest-modus</p>
-                <p className="text-xs text-slate-500 mt-0.5">Dagelijks overzicht i.p.v. direct</p>
+                <p className="text-sm text-slate-200">{t.prefDigest}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{t.prefDigestDesc}</p>
               </div>
               <Toggle
                 checked={prefs.signal_digest_mode}
@@ -114,7 +119,7 @@ export default function ProfileTab({
         {/* Language */}
         <div className="bg-slate-800 rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2">
-            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taal</h3>
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.sectionLanguage}</h3>
           </div>
           <div className="px-4 pb-4">
             <select
@@ -139,8 +144,8 @@ export default function ProfileTab({
               <Shield size={18} className="text-orange-400" />
             </div>
             <div className="flex-1">
-              <p className="text-sm font-medium text-slate-200">Beheerdersinstellingen</p>
-              <p className="text-xs text-slate-500 mt-0.5">Gebruikers, tickets, configuratie</p>
+              <p className="text-sm font-medium text-slate-200">{t.adminSettings}</p>
+              <p className="text-xs text-slate-500 mt-0.5">{t.adminSettingsDesc}</p>
             </div>
             <span className="text-slate-600 text-lg">›</span>
           </Link>
@@ -148,13 +153,13 @@ export default function ProfileTab({
 
         {/* Logout */}
         <a
-          href="/outpost.goauthentik.io/sign_out"
+          href={process.env.NEXT_PUBLIC_LOGOUT_URL ?? '/outpost.goauthentik.io/sign_out'}
           className="flex items-center gap-3 bg-red-950/60 border border-red-900/50 rounded-2xl p-4 hover:bg-red-900/50 active:scale-[0.98] transition"
         >
           <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center shrink-0">
             <LogOut size={18} className="text-red-400" />
           </div>
-          <p className="text-sm font-semibold text-red-300">Uitloggen</p>
+          <p className="text-sm font-semibold text-red-300">{t.logout}</p>
         </a>
 
         {/* Spacer for safe area */}

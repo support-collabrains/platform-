@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { FileText, Search, ExternalLink } from 'lucide-react';
+import { useT } from '../LangContext';
 
 interface Doc {
   id: number;
@@ -18,6 +19,7 @@ function paperlessUrl(id: number): string {
 }
 
 export default function DocsPage() {
+  const t = useT();
   const [docs, setDocs] = useState<Doc[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -39,7 +41,7 @@ export default function DocsPage() {
           <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
           <input
             type="search"
-            placeholder="Zoeken..."
+            placeholder={t.searchPlaceholder}
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
@@ -62,7 +64,7 @@ export default function DocsPage() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center py-16 text-slate-600">
             <FileText size={40} className="mb-3 opacity-30" />
-            <p className="text-sm">{query ? 'Geen resultaten' : 'Geen documenten'}</p>
+            <p className="text-sm">{query ? t.noResults : t.noDocs}</p>
           </div>
         ) : (
           <div className="space-y-2">

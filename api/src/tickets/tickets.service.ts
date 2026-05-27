@@ -80,6 +80,14 @@ export class TicketsService {
     });
   }
 
+  async listAll(limit = 200): Promise<SignalTicket[]> {
+    return this.repo.find({
+      where: [{ status: 'open' }, { status: 'pending_confirm' }],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+  }
+
   async updateTicket(id: string, owner: string, status: 'done' | 'open'): Promise<boolean> {
     const ticket = await this.repo.findOne({ where: { id, owner } });
     if (!ticket) return false;

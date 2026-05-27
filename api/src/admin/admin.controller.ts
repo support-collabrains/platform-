@@ -15,6 +15,7 @@ import { AdminService } from './admin.service';
 import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../audit/audit.service';
+import { TicketsService } from '../tickets/tickets.service';
 import { RolesGuard } from '../common/roles.guard';
 import { InternalSecretGuard } from '../users-me/internal-secret.guard';
 
@@ -24,6 +25,7 @@ export class AdminController {
     private readonly adminService: AdminService,
     private readonly usersService: UsersService,
     private readonly audit: AuditService,
+    private readonly tickets: TicketsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -87,5 +89,12 @@ export class AdminController {
   async getAudit() {
     const events = await this.audit.getAll(100);
     return { events };
+  }
+
+  @Get('tickets')
+  @UseGuards(InternalSecretGuard, RolesGuard)
+  async listTickets() {
+    const tickets = await this.tickets.listAll();
+    return { tickets };
   }
 }

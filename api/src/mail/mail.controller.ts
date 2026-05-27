@@ -12,13 +12,13 @@ export class MailController {
   constructor(private readonly imap: MailImapService) {}
 
   @Get('stats')
-  stats(@Headers('x-authentik-uid') uid: string) {
+  stats(@Headers('x-authentik-username') uid: string) {
     return this.imap.getStats(uid);
   }
 
   @Get('messages')
   messages(
-    @Headers('x-authentik-uid') uid: string,
+    @Headers('x-authentik-username') uid: string,
     @Query('folder') folder = 'INBOX',
     @Query('page') page = '1',
     @Query('limit') limit = '25',
@@ -28,7 +28,7 @@ export class MailController {
 
   @Get('messages/:uid')
   message(
-    @Headers('x-authentik-uid') authUid: string,
+    @Headers('x-authentik-username') authUid: string,
     @Param('uid') msgUid: string,
     @Query('folder') folder = 'INBOX',
   ) {
@@ -38,7 +38,7 @@ export class MailController {
   @Post('messages/:uid/seen')
   @HttpCode(204)
   async markSeen(
-    @Headers('x-authentik-uid') authUid: string,
+    @Headers('x-authentik-username') authUid: string,
     @Param('uid') msgUid: string,
     @Query('folder') folder = 'INBOX',
   ) {
@@ -48,7 +48,7 @@ export class MailController {
   @Delete('messages/:uid')
   @HttpCode(204)
   async deleteMessage(
-    @Headers('x-authentik-uid') authUid: string,
+    @Headers('x-authentik-username') authUid: string,
     @Param('uid') msgUid: string,
     @Query('folder') folder = 'INBOX',
   ) {
@@ -56,13 +56,13 @@ export class MailController {
   }
 
   @Get('vacation')
-  vacation(@Headers('x-authentik-uid') uid: string) {
+  vacation(@Headers('x-authentik-username') uid: string) {
     return this.imap.getVacation(uid);
   }
 
   @Put('vacation')
   setVacation(
-    @Headers('x-authentik-uid') uid: string,
+    @Headers('x-authentik-username') uid: string,
     @Body() body: VacationDto,
   ) {
     return this.imap.setVacation(uid, body.active, body.subject ?? '', body.body ?? '');

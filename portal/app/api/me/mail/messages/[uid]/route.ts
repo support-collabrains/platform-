@@ -18,6 +18,7 @@ export async function GET(
         headers: {
           'x-internal-secret': INTERNAL_API_SECRET,
           'x-authentik-uid': hdrs.get('x-authentik-uid') ?? '',
+          'x-authentik-username': hdrs.get('x-authentik-username') ?? '',
         },
         cache: 'no-store',
       },
@@ -43,6 +44,7 @@ export async function DELETE(
         headers: {
           'x-internal-secret': INTERNAL_API_SECRET,
           'x-authentik-uid': hdrs.get('x-authentik-uid') ?? '',
+          'x-authentik-username': hdrs.get('x-authentik-username') ?? '',
         },
       },
     );

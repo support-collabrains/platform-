@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
       headers: {
         'x-internal-secret': INTERNAL_API_SECRET,
         'x-authentik-uid': hdrs.get('x-authentik-uid') ?? '',
+        'x-authentik-username': hdrs.get('x-authentik-username') ?? '',
       },
       cache: 'no-store',
     });

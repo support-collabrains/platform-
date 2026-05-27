@@ -56,12 +56,18 @@ export class UsersMeService {
     this.paperlessToken = config.get('PAPERLESS_API_TOKEN') ?? '';
   }
 
-  async resolveUser(uid: string): Promise<AuthentikUser> {
-    const { data } = await axios.get<AuthentikUser>(
-      `${this.authentikUrl}/api/v3/core/users/${uid}/`,
-      { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
+  async resolveUser(username: string): Promise<AuthentikUser> {
+    const { data } = await axios.get<{ results: AuthentikUser[] }>(
+      `${this.authentikUrl}/api/v3/core/users/`,
+      {
+        headers: { Authorization: `Bearer ${this.authentikToken}` },
+        params: { username, page_size: 1 },
+        timeout: 8_000,
+      },
     );
-    return data;
+    const user = data.results?.[0];
+    if (!user) throw new Error(`Authentik user not found: ${username}`);
+    return user;
   }
 
   async getDocuments(username: string): Promise<PaperlessDoc[]> {
@@ -109,8 +115,8 @@ export class UsersMeService {
     };
   }
 
-  async updatePreferences(uid: string, prefs: Partial<UserPreferences>): Promise<void> {
-    const user = await this.resolveUser(uid);
+  async updatePreferences(username: string, prefs: Partial<UserPreferences>): Promise<void> {
+    const user = await this.resolveUser(username);
     const attrs: Record<string, string> = { ...user.attributes };
 
     if (prefs.signal_doc_notify !== undefined)
@@ -121,7 +127,7 @@ export class UsersMeService {
       attrs.language = prefs.language;
 
     await axios.patch(
-      `${this.authentikUrl}/api/v3/core/users/${uid}/`,
+      `${this.authentikUrl}/api/v3/core/users/${user.pk}/`,
       { attributes: attrs },
       { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
     );

@@ -19,6 +19,7 @@ export async function POST(
         headers: {
           'x-internal-secret': INTERNAL_API_SECRET,
           'x-authentik-uid': hdrs.get('x-authentik-uid') ?? '',
+          'x-authentik-username': hdrs.get('x-authentik-username') ?? '',
         },
       },
     );

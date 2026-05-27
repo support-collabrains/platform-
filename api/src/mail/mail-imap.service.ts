@@ -27,16 +27,18 @@ export class MailImapService {
     this.authentikToken = config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '';
     this.mailcowUrl = config.get('MAILCOW_URL') ?? 'http://nginx-mailcow:8080';
     this.mailcowApiKey = config.get('MAILCOW_API_KEY') ?? '';
-    this.imapHost = 'nginx-mailcow';
+    this.imapHost = config.get('IMAP_HOST') ?? 'dovecot-mailcow';
   }
 
   // ── Credentials ───────────────────────────────────────────────────────────
 
-  async getCredentials(uid: string): Promise<{ user: string; pass: string }> {
-    const { data: authUser } = await axios.get(
-      `${this.authentikUrl}/api/v3/core/users/${uid}/`,
-      { headers: { Authorization: `Bearer ${this.authentikToken}` }, timeout: 8_000 },
+  async getCredentials(username: string): Promise<{ user: string; pass: string }> {
+    const { data: listData } = await axios.get<{ results: Array<{ pk: number; email: string; attributes: Record<string, string> }> }>(
+      `${this.authentikUrl}/api/v3/core/users/`,
+      { headers: { Authorization: `Bearer ${this.authentikToken}` }, params: { username, page_size: 1 }, timeout: 8_000 },
     );
+    const authUser = listData.results?.[0];
+    if (!authUser) throw new Error(`User not found: ${username}`);
 
     const email = authUser.email as string;
     let password = (authUser.attributes as Record<string, string>)?.mail_imap_password;
@@ -45,7 +47,7 @@ export class MailImapService {
       this.logger.log(`No IMAP password stored for ${email} — resetting via Mailcow`);
       password = crypto.randomBytes(16).toString('base64url') + 'Aa1!';
       await this.resetMailcowPassword(email, password);
-      await this.storePasswordInAuthentik(uid, authUser.attributes ?? {}, password);
+      await this.storePasswordInAuthentik(String(authUser.pk), authUser.attributes ?? {}, password);
     }
 
     return { user: email, pass: password };

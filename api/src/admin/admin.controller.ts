@@ -16,6 +16,7 @@ import { ConfigService } from '@nestjs/config';
 import { UsersService } from '../users/users.service';
 import { AuditService } from '../audit/audit.service';
 import { TicketsService } from '../tickets/tickets.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { RolesGuard } from '../common/roles.guard';
 import { InternalSecretGuard } from '../users-me/internal-secret.guard';
 
@@ -26,6 +27,7 @@ export class AdminController {
     private readonly usersService: UsersService,
     private readonly audit: AuditService,
     private readonly tickets: TicketsService,
+    private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -39,13 +41,22 @@ export class AdminController {
   @Post('users')
   async createUser(
     @Headers('authorization') auth: string,
-    @Body() body: { username: string; name: string; email: string; password: string; phone?: string; phone2?: string },
+    @Body() body: { username: string; name: string; email: string; phone?: string; phone2?: string },
   ) {
     this.authorizeWebhook(auth);
-    const pk = await this.adminService.createUser(body.username, body.name, body.email, body.password, body.phone, body.phone2);
+    const { pk, setupLink } = await this.adminService.createUser(body.username, body.name, body.email, body.phone, body.phone2);
     await this.usersService.onboardUser(pk);
     await this.audit.log('system', 'user.create', body.username);
-    return { ok: true, pk };
+
+    // Send setup link via Signal if the user has a phone number
+    if (setupLink && body.phone) {
+      await this.notifications.sendToNumber(
+        body.phone,
+        `👋 Welkom bij CollaBrains!\n\nJe account is aangemaakt. Klik op de onderstaande link om je wachtwoord in te stellen:\n${setupLink}\n\n⚠️ Deze link is eenmalig geldig.`,
+      );
+    }
+
+    return { ok: true, pk, setupLink };
   }
 
   @Delete('users/:pk')

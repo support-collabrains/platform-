@@ -64,8 +64,9 @@ export default function AdminClient() {
   const [creating, setCreating] = useState(false);
   const [deletingPk, setDeletingPk] = useState<number | null>(null);
   const [createError, setCreateError] = useState('');
+  const [setupLink, setSetupLink] = useState('');
   const [form, setForm] = useState({
-    username: '', name: '', email: '', password: '', phone: '', phone2: '',
+    username: '', name: '', email: '', phone: '', phone2: '',
   });
 
   // Signal settings (local state, no backing API yet)
@@ -123,6 +124,7 @@ export default function AdminClient() {
     e.preventDefault();
     setCreating(true);
     setCreateError('');
+    setSetupLink('');
     try {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
@@ -130,8 +132,10 @@ export default function AdminClient() {
         body: JSON.stringify(form),
       });
       if (!res.ok) throw new Error('Aanmaken mislukt');
-      setForm({ username: '', name: '', email: '', password: '', phone: '', phone2: '' });
+      const data = await res.json() as { setupLink?: string };
+      setForm({ username: '', name: '', email: '', phone: '', phone2: '' });
       setShowCreateForm(false);
+      if (data.setupLink) setSetupLink(data.setupLink);
       await loadUsers();
     } catch (err) {
       setCreateError((err as Error).message);
@@ -422,7 +426,6 @@ export default function AdminClient() {
                       { field: 'username', placeholder: 'Gebruikersnaam', type: 'text' },
                       { field: 'name', placeholder: 'Volledige naam', type: 'text' },
                       { field: 'email', placeholder: 'E-mailadres', type: 'email' },
-                      { field: 'password', placeholder: 'Wachtwoord', type: 'password' },
                     ] as const
                   ).map(({ field, placeholder, type }) => (
                     <input
@@ -468,6 +471,33 @@ export default function AdminClient() {
                   </button>
                 </div>
               </form>
+            )}
+
+            {setupLink && (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 space-y-2">
+                <p className="text-sm font-medium text-green-400">Gebruiker aangemaakt — eenmalige setup-link:</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={setupLink}
+                    className="flex-1 px-3 py-1.5 bg-slate-800/60 border border-slate-600/50 rounded text-xs text-slate-300 font-mono focus:outline-none"
+                    onFocus={e => e.target.select()}
+                  />
+                  <button
+                    onClick={() => { void navigator.clipboard.writeText(setupLink); }}
+                    className="px-3 py-1.5 bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 rounded text-xs transition whitespace-nowrap"
+                  >
+                    Kopieer
+                  </button>
+                  <button
+                    onClick={() => setSetupLink('')}
+                    className="text-slate-500 hover:text-slate-300 text-xs transition"
+                  >
+                    ✕
+                  </button>
+                </div>
+                {!form.phone && <p className="text-xs text-slate-500">Geen Signal-nummer opgegeven — stuur deze link zelf door.</p>}
+              </div>
             )}
 
             <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg overflow-hidden">

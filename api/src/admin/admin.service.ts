@@ -64,9 +64,9 @@ export class AdminService {
     this.logger.log(`Set role ${role} for user pk=${pk}`);
   }
 
-  async createUser(username: string, name: string, email: string, password: string, phone?: string, phone2?: string): Promise<number> {
+  async createUser(username: string, name: string, email: string, phone?: string, phone2?: string): Promise<{ pk: number; setupLink: string }> {
     const api = this.api;
-    const attributes: Record<string, string> = {};
+    const attributes: Record<string, string> = { language: 'nl' };
     if (phone) attributes.phone = phone;
     if (phone2) attributes.phone2 = phone2;
     const { data: user } = await api.post('/api/v3/core/users/', {
@@ -78,9 +78,24 @@ export class AdminService {
       groups: [],
       attributes,
     });
-    await api.post(`/api/v3/core/users/${user.pk}/set_password/`, { password });
     this.logger.log(`Created Authentik user: ${username} (pk=${user.pk})`);
-    return user.pk as number;
+
+    // Generate one-time account setup link
+    const setupLink = await this.generateSetupLink(user.pk as number);
+    return { pk: user.pk as number, setupLink };
+  }
+
+  async generateSetupLink(pk: number): Promise<string> {
+    try {
+      const { data } = await this.api.post(`/api/v3/core/users/${pk}/recovery/`);
+      const rawLink = (data as { link: string }).link;
+      // Replace internal hostname with public auth URL
+      const publicAuth = `https://auth.${this.config.get('PRIMARY_DOMAIN') ?? 'localhost'}`;
+      return rawLink.replace(/https?:\/\/[^/]+/, publicAuth);
+    } catch (err) {
+      this.logger.warn(`Could not generate setup link for pk=${pk}: ${(err as Error).message}`);
+      return '';
+    }
   }
 
   async deleteUser(pk: number): Promise<void> {

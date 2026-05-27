@@ -131,16 +131,21 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         const envelope = msg?.envelope;
         if (!envelope) continue;
 
-        const senderPhone: string = envelope.sourceNumber ?? envelope.source ?? '';
+        // Prefer phone number; fall back to UUID for privacy-mode users
+        const senderPhone: string = envelope.sourceNumber ?? '';
+        const senderUuid: string = envelope.sourceUuid ?? '';
+        const sender: string = senderPhone || senderUuid;
         const text: string = (envelope.dataMessage?.message ?? '').trim();
         const reaction: string = envelope.dataMessage?.reaction?.emoji ?? '';
 
-        if (!senderPhone) continue;
+        this.logger.log(`Signal msg from=${sender || '(empty)'} number=${senderPhone || 'null'} uuid=${senderUuid || 'null'} text="${text.slice(0, 60)}" reaction="${reaction}"`);
+
+        if (!sender) continue;
 
         // /help
         if (/^\/help$/i.test(text)) {
-          const lang = await this.getLanguageForPhone(senderPhone);
-          await this.sendSignal(senderPhone, this.i18n(lang).help(
+          const lang = await this.getLanguageForPhone(sender);
+          await this.sendSignal(sender, this.i18n(lang).help(
             this.portalOrigin ? `${this.portalOrigin}/dashboard` : 'het dashboard',
           ));
           continue;
@@ -149,34 +154,34 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         // /phone2 <number> or /phone2 verwijder
         const phone2Match = text.match(/^\/phone2\s+(.+)$/i);
         if (phone2Match) {
-          await this.handleSetPhone2(senderPhone, phone2Match[1].trim());
+          await this.handleSetPhone2(sender, phone2Match[1].trim());
           continue;
         }
 
         // /taak, /aufgabe, /task — create ticket
         const taskMatch = text.match(/^\/(?:taak|aufgabe|task)\s+(.+)$/i);
         if (taskMatch) {
-          await this.handleCreateTicket(senderPhone, taskMatch[1].trim());
+          await this.handleCreateTicket(sender, taskMatch[1].trim());
           continue;
         }
 
         // /taken, /aufgaben, /tasks — list open tickets
         if (/^\/(?:taken|aufgaben|tasks)$/i.test(text)) {
-          await this.handleListTickets(senderPhone);
+          await this.handleListTickets(sender);
           continue;
         }
 
         // /klaar, /fertig, /done <nr> — mark ticket done
         const doneMatch = text.match(/^\/(?:klaar|fertig|done)\s+(\d+)$/i);
         if (doneMatch) {
-          await this.handleMarkTicketDone(senderPhone, parseInt(doneMatch[1], 10));
+          await this.handleMarkTicketDone(sender, parseInt(doneMatch[1], 10));
           continue;
         }
 
         // ❌ — cancel pending ticket
         const isCancellation = text.includes('❌') || reaction === '❌';
         if (isCancellation) {
-          await this.handleCancelTicket(senderPhone);
+          await this.handleCancelTicket(sender);
           continue;
         }
 
@@ -185,12 +190,12 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         if (!isApproval) continue;
 
         // Check pending ticket confirmation first
-        const ticketConfirmed = await this.handleConfirmTicket(senderPhone);
+        const ticketConfirmed = await this.handleConfirmTicket(sender);
         if (ticketConfirmed) continue;
 
         // Fall back to document summary approval
         const notif = await this.notifRepo.findOne({
-          where: { phone: senderPhone, status: 'pending' },
+          where: { phone: sender, status: 'pending' },
           order: { createdAt: 'ASC' },
         });
         if (!notif) continue;
@@ -201,16 +206,16 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         notif.status = 'processing';
         await this.notifRepo.save(notif);
 
-        const userLang = await this.getLanguageForPhone(senderPhone);
+        const userLang = await this.getLanguageForPhone(sender);
         const tApproval = this.i18n(userLang);
 
-        this.logger.log(`✅ received from ${senderPhone} for document: ${doc.title}`);
-        await this.sendSignal(senderPhone, tApproval.processing(doc.title));
+        this.logger.log(`✅ received from ${sender} for document: ${doc.title}`);
+        await this.sendSignal(sender, tApproval.processing(doc.title));
 
         await this.queue.add('summarize', {
           documentId: doc.id,
           notificationId: notif.id,
-          phone: senderPhone,
+          phone: sender,
           paperlessId: doc.paperlessId,
           title: doc.title,
           language: userLang,

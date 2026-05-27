@@ -1,0 +1,165 @@
+// portal/app/dashboard/profile/ProfileTab.tsx
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Settings, Shield, LogOut } from 'lucide-react';
+import Link from 'next/link';
+
+interface Preferences {
+  signal_doc_notify: boolean;
+  signal_digest_mode: boolean;
+  language: 'nl' | 'de' | 'en';
+}
+
+function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative w-12 h-6 rounded-full transition-colors shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${
+        checked ? 'bg-cyan-500' : 'bg-slate-600'
+      }`}
+    >
+      <span
+        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
+          checked ? 'translate-x-6' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  );
+}
+
+export default function ProfileTab({
+  username,
+  email,
+  isAdmin,
+}: {
+  username: string;
+  email: string;
+  isAdmin: boolean;
+}) {
+  const [prefs, setPrefs] = useState<Preferences>({
+    signal_doc_notify: true,
+    signal_digest_mode: false,
+    language: 'nl',
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/me/preferences')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: Preferences | null) => { if (d) setPrefs(d); })
+      .catch(() => {});
+  }, []);
+
+  async function updatePref<K extends keyof Preferences>(key: K, value: Preferences[K]) {
+    setPrefs(prev => ({ ...prev, [key]: value }));
+    setSaving(true);
+    await fetch('/api/me/preferences', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value }),
+    }).finally(() => setSaving(false));
+  }
+
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="p-4 space-y-4">
+        {/* User card */}
+        <div className="bg-slate-800 rounded-2xl p-4 flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 flex items-center justify-center text-slate-900 font-bold text-2xl shrink-0 select-none">
+            {username.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-slate-100 truncate">{username}</p>
+            {email && <p className="text-sm text-slate-500 truncate mt-0.5">{email}</p>}
+          </div>
+        </div>
+
+        {/* Notification preferences */}
+        <div className="bg-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+              <Settings size={12} />
+              Meldingen
+              {saving && <span className="text-cyan-400 text-[10px] normal-case tracking-normal ml-1">opslaan…</span>}
+            </h3>
+          </div>
+          <div className="divide-y divide-slate-700/50">
+            <div className="px-4 py-3.5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-slate-200">Signal-meldingen</p>
+                <p className="text-xs text-slate-500 mt-0.5">Melding bij nieuw document</p>
+              </div>
+              <Toggle
+                checked={prefs.signal_doc_notify}
+                onChange={v => updatePref('signal_doc_notify', v)}
+              />
+            </div>
+            <div className="px-4 py-3.5 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm text-slate-200">Digest-modus</p>
+                <p className="text-xs text-slate-500 mt-0.5">Dagelijks overzicht i.p.v. direct</p>
+              </div>
+              <Toggle
+                checked={prefs.signal_digest_mode}
+                onChange={v => updatePref('signal_digest_mode', v)}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Language */}
+        <div className="bg-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Taal</h3>
+          </div>
+          <div className="px-4 pb-4">
+            <select
+              value={prefs.language}
+              onChange={e => updatePref('language', e.target.value as Preferences['language'])}
+              className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600/50 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-cyan-500 transition appearance-none"
+            >
+              <option value="nl">🇳🇱 Nederlands</option>
+              <option value="de">🇩🇪 Deutsch</option>
+              <option value="en">🇬🇧 English</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Admin link — only for admins */}
+        {isAdmin && (
+          <Link
+            href="/admin"
+            className="flex items-center gap-3 bg-slate-800 rounded-2xl p-4 hover:bg-slate-700/80 active:scale-[0.98] transition"
+          >
+            <div className="w-10 h-10 bg-orange-500/10 rounded-xl flex items-center justify-center shrink-0">
+              <Shield size={18} className="text-orange-400" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-slate-200">Beheerdersinstellingen</p>
+              <p className="text-xs text-slate-500 mt-0.5">Gebruikers, tickets, configuratie</p>
+            </div>
+            <span className="text-slate-600 text-lg">›</span>
+          </Link>
+        )}
+
+        {/* Logout */}
+        <a
+          href="/outpost.goauthentik.io/sign_out"
+          className="flex items-center gap-3 bg-red-950/60 border border-red-900/50 rounded-2xl p-4 hover:bg-red-900/50 active:scale-[0.98] transition"
+        >
+          <div className="w-10 h-10 bg-red-500/10 rounded-xl flex items-center justify-center shrink-0">
+            <LogOut size={18} className="text-red-400" />
+          </div>
+          <p className="text-sm font-semibold text-red-300">Uitloggen</p>
+        </a>
+
+        {/* Spacer for safe area */}
+        <div className="h-4" />
+      </div>
+    </div>
+  );
+}

@@ -14,6 +14,7 @@ import { SignalTicket } from './tickets/ticket.entity';
 import { TicketsModule } from './tickets/tickets.module';
 import { AuditEvent } from './audit/audit.entity';
 import { AuditModule } from './audit/audit.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { AuditModule } from './audit/audit.module';
     UsersMeModule,
     TicketsModule,
     AuditModule,
+    MailModule,
   ],
 })
 export class AppModule {}

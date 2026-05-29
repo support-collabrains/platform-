@@ -61,7 +61,7 @@ export class TicketsService implements OnModuleInit, OnModuleDestroy {
 
     for (const ticket of overdue) {
       try {
-        await this.notifications.sendSignal(ticket.phone, `⏰ Herinnering: taak #${ticket.seq} — ${ticket.title} (vervaldatum: ${ticket.dueDate})`);
+        await this.notifications.sendToNumber(ticket.phone, `⏰ Herinnering: taak #${ticket.seq} — ${ticket.title} (vervaldatum: ${ticket.dueDate})`);
       } catch (err) {
         this.logger.warn(`Reminder failed for ticket ${ticket.id}: ${String(err)}`);
       }

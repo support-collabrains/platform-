@@ -53,13 +53,54 @@ export class MailImapService {
     let password = (authUser.attributes as Record<string, string>)?.mail_imap_password;
 
     if (!password) {
-      this.logger.log(`No IMAP password stored for ${email} — resetting via Mailcow`);
       password = crypto.randomBytes(16).toString('base64url') + 'Aa1!';
-      await this.resetMailcowPassword(email, password);
+      const mailboxExists = await this.checkMailboxExists(email);
+      if (mailboxExists) {
+        this.logger.log(`Resetting IMAP password for ${email} (mailbox exists, no stored password)`);
+        await this.resetMailcowPassword(email, password);
+      } else {
+        this.logger.log(`Creating missing mailbox for ${email} and storing password`);
+        await this.createMailboxViaApi(email, password);
+      }
       await this.storePasswordInAuthentik(String(authUser.pk), authUser.attributes ?? {}, password);
     }
 
     return { user: email, pass: password };
+  }
+
+  private async checkMailboxExists(email: string): Promise<boolean> {
+    try {
+      const { data } = await axios.get(`${this.mailcowUrl}/api/v1/get/mailbox/${email}`, {
+        headers: { 'X-API-Key': this.mailcowApiKey },
+        timeout: 8_000,
+      });
+      return data && !Array.isArray(data) && typeof data === 'object' && 'username' in data;
+    } catch {
+      return false;
+    }
+  }
+
+  private async createMailboxViaApi(email: string, password: string): Promise<void> {
+    const [local, domain] = email.split('@');
+    try {
+      await axios.post(`${this.mailcowUrl}/api/v1/add/mailbox`, {
+        local_part: local,
+        domain,
+        name: local,
+        password,
+        password2: password,
+        quota: 3072,
+        active: 1,
+        force_pw_update: 0,
+      }, {
+        headers: { 'X-API-Key': this.mailcowApiKey },
+        timeout: 15_000,
+      });
+      this.logger.log(`Created missing mailbox: ${email}`);
+    } catch (err) {
+      this.logger.error(`Failed to create mailbox ${email}: ${(err as Error).message}`);
+      throw err;
+    }
   }
 
   private async resetMailcowPassword(email: string, password: string): Promise<void> {

@@ -1,10 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PaperlessService } from './paperless.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LdapMetadataService } from '../ldap/ldap-metadata.service';
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -16,6 +18,7 @@ export class UsersService implements OnModuleInit {
     private readonly config: ConfigService,
     private readonly paperlessService: PaperlessService,
     private readonly notifications: NotificationsService,
+    private readonly ldapMetadata: LdapMetadataService,
   ) {}
 
   onModuleInit() {
@@ -72,11 +75,23 @@ export class UsersService implements OnModuleInit {
       mailPassword = await this.createMailcowMailbox(user.email, user.name, authentikPk, user.attributes ?? {});
     }
 
-    await this.paperlessService.ensureUserAndWorkflow(
+    const paperlessUserId = await this.paperlessService.ensureUserAndWorkflow(
       user.username,
       user.email,
       user.name,
       mailPassword,
+    );
+
+    // Store LDAP custom attributes for this user
+    const base = this.config.get('PAPERLESS_DATA_DIR') ?? '/data/paperless';
+    const ldapPatch: Record<string, string | number> = {
+      defaultArchivePath: path.join(base, 'consume', user.username),
+    };
+    if (paperlessUserId) ldapPatch.paperlessUserId = paperlessUserId;
+    const attrs = user.attributes as Record<string, string> ?? {};
+    if (attrs.phone) ldapPatch.signalPhone = attrs.phone;
+    await this.ldapMetadata.setAttributesByPk(authentikPk, ldapPatch).catch((err) =>
+      this.logger.warn(`LDAP attr store failed (non-fatal): ${(err as Error).message}`),
     );
 
     // Notify admin + all users with phone numbers
@@ -85,7 +100,6 @@ export class UsersService implements OnModuleInit {
     );
 
     // Welcome message to all phone numbers the new user has
-    const attrs = user.attributes as Record<string, string> ?? {};
     const userPhones = [attrs.phone, attrs.phone2].filter((p): p is string => !!p?.startsWith('+'));
     for (const phone of userPhones) {
       await this.notifications.sendToNumber(
@@ -142,11 +156,13 @@ export class UsersService implements OnModuleInit {
 
     try {
       const { data: existing } = await api.get(`/api/v1/get/mailbox/${email}`);
-      if (existing && !Array.isArray(existing)) {
+      // Mailcow returns {} for non-existent mailboxes; existing mailbox has 'username' field
+      const mailboxExists = existing && !Array.isArray(existing) && typeof existing === 'object' && 'username' in existing;
+      if (mailboxExists) {
         this.logger.log(`Mailbox already exists: ${email}`);
         return existingAttributes.mail_imap_password;
       }
-      const tmp = `${Math.random().toString(36).slice(2)}Aa1!`;
+      const tmp = `${crypto.randomBytes(12).toString('base64url')}Aa1!`;
       await api.post('/api/v1/add/mailbox', {
         local_part: local,
         domain,

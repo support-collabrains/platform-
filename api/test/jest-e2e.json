@@ -5,5 +5,9 @@
   "testRegex": ".e2e-spec.ts$",
   "transform": {
     "^.+\\.(t|j)s$": "ts-jest"
+  },
+  "moduleNameMapper": {
+    "^jsdom$": "<rootDir>/__mocks__/jsdom.js",
+    "^dompurify$": "<rootDir>/__mocks__/dompurify.js"
   }
 }

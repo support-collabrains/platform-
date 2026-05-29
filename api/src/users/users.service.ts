@@ -66,16 +66,18 @@ export class UsersService implements OnModuleInit {
 
     this.createUserDirs(user.username);
 
+    const mailDomain = this.config.get('MAIL_DOMAIN') ?? '';
+    let mailPassword: string | undefined;
+    if (mailDomain && user.email.endsWith(`@${mailDomain}`)) {
+      mailPassword = await this.createMailcowMailbox(user.email, user.name, authentikPk, user.attributes ?? {});
+    }
+
     await this.paperlessService.ensureUserAndWorkflow(
       user.username,
       user.email,
       user.name,
+      mailPassword,
     );
-
-    const mailDomain = this.config.get('MAIL_DOMAIN') ?? '';
-    if (mailDomain && user.email.endsWith(`@${mailDomain}`)) {
-      await this.createMailcowMailbox(user.email, user.name, authentikPk);
-    }
 
     // Notify admin + all users with phone numbers
     await this.notifications.broadcast(
@@ -125,10 +127,15 @@ export class UsersService implements OnModuleInit {
     }
   }
 
-  private async createMailcowMailbox(email: string, name: string, authentikPk: number): Promise<void> {
+  private async createMailcowMailbox(
+    email: string,
+    name: string,
+    authentikPk: number,
+    existingAttributes: Record<string, string>,
+  ): Promise<string | undefined> {
     const url = this.config.get('MAILCOW_URL') ?? 'http://nginx-mailcow:8080';
     const apiKey = this.config.get('MAILCOW_API_KEY') ?? '';
-    if (!apiKey) return;
+    if (!apiKey) return undefined;
 
     const [local, domain] = email.split('@');
     const api = axios.create({ baseURL: url, headers: { 'X-API-Key': apiKey } });
@@ -137,7 +144,7 @@ export class UsersService implements OnModuleInit {
       const { data: existing } = await api.get(`/api/v1/get/mailbox/${email}`);
       if (existing && !Array.isArray(existing)) {
         this.logger.log(`Mailbox already exists: ${email}`);
-        return;
+        return existingAttributes.mail_imap_password;
       }
       const tmp = `${Math.random().toString(36).slice(2)}Aa1!`;
       await api.post('/api/v1/add/mailbox', {
@@ -152,8 +159,10 @@ export class UsersService implements OnModuleInit {
       });
       this.logger.log(`Created mailbox: ${email}`);
       await this.storeMailPassword(authentikPk, tmp);
+      return tmp;
     } catch (err) {
       this.logger.error(`Failed to create mailbox ${email}: ${(err as Error).message}`);
+      return undefined;
     }
   }
 

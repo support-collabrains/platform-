@@ -88,6 +88,10 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "moduleNameMapper": {
+      "^jsdom$": "<rootDir>/../test/__mocks__/jsdom.js",
+      "^dompurify$": "<rootDir>/../test/__mocks__/dompurify.js"
+    }
   }
 }

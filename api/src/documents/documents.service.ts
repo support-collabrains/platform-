@@ -406,7 +406,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
 
   private async getOrCreatePaperlessTag(name: string, colour: string): Promise<number> {
     const { data } = await axios.get(
-      `${this.paperlessUrl}/api/tags/?name=${encodeURIComponent(name)}`,
+      `${this.paperlessUrl}/api/tags/?name__iexact=${encodeURIComponent(name)}`,
       { headers: { Authorization: `Token ${this.paperlessToken}` }, timeout: 10_000 },
     );
     if ((data.count as number) > 0) return (data.results[0] as { id: number }).id;

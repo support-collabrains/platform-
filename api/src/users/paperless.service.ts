@@ -20,9 +20,12 @@ export class PaperlessService {
     });
   }
 
-  async ensureUserAndWorkflow(username: string, email: string, name: string): Promise<void> {
+  async ensureUserAndWorkflow(username: string, email: string, name: string, mailPassword?: string): Promise<void> {
     const userId = await this.ensureUser(username, email, name);
     await this.ensureWorkflow(username, userId);
+    if (mailPassword) {
+      await this.ensureMailAccount(username, email, userId, mailPassword);
+    }
   }
 
   private async ensureUser(username: string, email: string, name: string): Promise<number> {
@@ -49,6 +52,62 @@ export class PaperlessService {
     });
     this.logger.log(`Created Paperless user: ${username} (id=${user.id})`);
     return user.id as number;
+  }
+
+  private async ensureMailAccount(username: string, email: string, ownerId: number, password: string): Promise<void> {
+    const api = this.api;
+    const { data: all } = await api.get('/api/mail_accounts/', { params: { page_size: 200 } });
+    const found = (all.results as Array<{ id: number; username: string }>).find(a => a.username === email);
+    if (found) {
+      this.logger.log(`Paperless mail account already exists for: ${email} (id=${found.id})`);
+      await this.ensureMailRule(username, found.id, ownerId);
+      return;
+    }
+    const { data: account } = await api.post('/api/mail_accounts/', {
+      name: email,
+      imap_server: 'mail.cbrains.de',
+      imap_port: 993,
+      imap_security: 2,
+      username: email,
+      password,
+      character_set: 'UTF-8',
+      is_token: false,
+      owner: ownerId,
+      account_type: 1,
+    });
+    this.logger.log(`Created Paperless mail account for: ${email} (id=${account.id})`);
+    await this.ensureMailRule(username, account.id as number, ownerId);
+  }
+
+  private async ensureMailRule(username: string, accountId: number, ownerId: number): Promise<void> {
+    const api = this.api;
+    const ruleName = `Email ${username} → import`;
+    const { data: all } = await api.get('/api/mail_rules/', { params: { page_size: 200 } });
+    const exists = (all.results as Array<{ name: string }>).some(r => r.name === ruleName);
+    if (exists) {
+      this.logger.log(`Paperless mail rule already exists for: ${username}`);
+      return;
+    }
+    await api.post('/api/mail_rules/', {
+      name: ruleName,
+      account: accountId,
+      enabled: true,
+      folder: 'INBOX',
+      maximum_age: 30,
+      action: 3,
+      action_parameter: null,
+      assign_title_from: 2,
+      assign_tags: [],
+      assign_correspondent_from: 2,
+      assign_correspondent: null,
+      assign_document_type: null,
+      assign_owner_from_rule: true,
+      order: 0,
+      attachment_type: 1,
+      consumption_scope: 1,
+      owner: ownerId,
+    });
+    this.logger.log(`Created Paperless mail rule for: ${username}`);
   }
 
   private async ensureWorkflow(username: string, ownerId: number): Promise<void> {

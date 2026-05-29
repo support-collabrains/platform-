@@ -296,7 +296,7 @@ services:
       PAPERLESS_OCR_MODE: skip
       PAPERLESS_CONSUMER_RECURSIVE: "true"
       PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS: "true"
-      PAPERLESS_FILENAME_FORMAT: "{{ owner_username }}/{{ created_year }}/{{ title }}"
+      PAPERLESS_FILENAME_FORMAT: "{{ owner_username }}/{{ document_type }}/{{ created_year }}/{{ title }}"
       USERMAP_UID: "1000"
       USERMAP_GID: "1000"
       # Authentik OIDC SSO
@@ -362,3 +362,11 @@ services:
       - paperless
       - ollama
     networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.paperless-gpt.rule=Host(`gpt.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.paperless-gpt.entrypoints=websecure"
+      - "traefik.http.routers.paperless-gpt.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.paperless-gpt.middlewares=authentik-forward@docker"
+      - "traefik.http.services.paperless-gpt.loadbalancer.server.port=8080"

@@ -38,6 +38,9 @@ export class AuthentikService {
     // Set CollaBrains branding (logo hosted publicly on portal)
     await this.configureBranding(api, config.primaryDomain);
 
+    // Provision LDAP custom property mappings for platform-specific attributes
+    await this.provisionLdapPropertyMappings(api);
+
     this.logger.log('Authentik provisioning complete');
   }
 
@@ -152,6 +155,27 @@ export class AuthentikService {
       this.logger.log('Updated identification stage submit label to Sign-In');
     } catch (err) {
       this.logger.warn(`submit_label update failed (non-fatal): ${(err as Error).message}`);
+    }
+  }
+
+  private async provisionLdapPropertyMappings(api: ReturnType<typeof axios.create>): Promise<void> {
+    const mappings = [
+      { name: 'CollaBrains: signalPhone', object_field: 'attributes.signalPhone', expression: "return user.attributes.get('signalPhone', '')" },
+      { name: 'CollaBrains: paperlessUserId', object_field: 'attributes.paperlessUserId', expression: "return str(user.attributes.get('paperlessUserId', ''))" },
+      { name: 'CollaBrains: defaultArchivePath', object_field: 'attributes.defaultArchivePath', expression: "return user.attributes.get('defaultArchivePath', '')" },
+    ];
+
+    for (const mapping of mappings) {
+      try {
+        const { data: existing } = await api.get('/api/v3/propertymappings/ldap/', {
+          params: { name: mapping.name },
+        });
+        if ((existing.pagination?.count ?? 0) > 0) continue;
+        await api.post('/api/v3/propertymappings/ldap/', mapping);
+        this.logger.log(`Created LDAP property mapping: ${mapping.name}`);
+      } catch (err) {
+        this.logger.warn(`LDAP property mapping failed (non-fatal): ${(err as Error).message}`);
+      }
     }
   }
 

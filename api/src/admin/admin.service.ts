@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { ADMIN_GROUP } from '../common/roles.guard';
+import { LdapMetadataService, LdapUserAttributes } from '../ldap/ldap-metadata.service';
 
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly ldapMetadata: LdapMetadataService,
+  ) {}
 
   private get api() {
     const url = this.config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
@@ -89,13 +93,29 @@ export class AdminService {
     try {
       const { data } = await this.api.post(`/api/v3/core/users/${pk}/recovery/`);
       const rawLink = (data as { link: string }).link;
-      // Replace internal hostname with public auth URL
+      // Use URL API instead of regex to safely swap the hostname
       const publicAuth = `https://auth.${this.config.get('PRIMARY_DOMAIN') ?? 'localhost'}`;
-      return rawLink.replace(/https?:\/\/[^/]+/, publicAuth);
+      try {
+        const parsed = new URL(rawLink);
+        const target = new URL(publicAuth);
+        parsed.host = target.host;
+        parsed.protocol = target.protocol;
+        return parsed.toString();
+      } catch {
+        return rawLink.replace(/https?:\/\/[^/]+/, publicAuth);
+      }
     } catch (err) {
       this.logger.warn(`Could not generate setup link for pk=${pk}: ${(err as Error).message}`);
       return '';
     }
+  }
+
+  async getUserAttributes(username: string): Promise<LdapUserAttributes> {
+    return this.ldapMetadata.getAttributes(username);
+  }
+
+  async setUserAttributes(pk: number, attrs: Partial<LdapUserAttributes>): Promise<void> {
+    await this.ldapMetadata.setAttributesByPk(pk, attrs);
   }
 
   async deleteUser(pk: number): Promise<void> {

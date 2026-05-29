@@ -108,4 +108,23 @@ export class AdminController {
     const tickets = await this.tickets.listAll();
     return { tickets };
   }
+
+  @Get('users/:username/attributes')
+  @UseGuards(InternalSecretGuard, RolesGuard)
+  async getUserAttributes(@Param('username') username: string) {
+    return this.adminService.getUserAttributes(username);
+  }
+
+  @Patch('users/:pk/attributes')
+  @HttpCode(200)
+  @UseGuards(InternalSecretGuard, RolesGuard)
+  async setUserAttributes(
+    @Headers('x-authentik-username') actor: string,
+    @Param('pk') pk: string,
+    @Body() body: { signalPhone?: string; paperlessUserId?: number; defaultArchivePath?: string },
+  ) {
+    await this.adminService.setUserAttributes(Number(pk), body);
+    await this.audit.log(actor ?? 'admin', 'user.attributes.update', pk, body);
+    return { ok: true };
+  }
 }

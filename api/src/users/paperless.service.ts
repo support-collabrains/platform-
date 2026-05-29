@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class PaperlessService {
@@ -20,12 +21,13 @@ export class PaperlessService {
     });
   }
 
-  async ensureUserAndWorkflow(username: string, email: string, name: string, mailPassword?: string): Promise<void> {
+  async ensureUserAndWorkflow(username: string, email: string, name: string, mailPassword?: string): Promise<number | undefined> {
     const userId = await this.ensureUser(username, email, name);
     await this.ensureWorkflow(username, userId);
     if (mailPassword) {
       await this.ensureMailAccount(username, email, userId, mailPassword);
     }
+    return userId;
   }
 
   private async ensureUser(username: string, email: string, name: string): Promise<number> {
@@ -46,7 +48,7 @@ export class PaperlessService {
       email,
       first_name: firstName,
       last_name: rest.join(' '),
-      password: `${Math.random().toString(36).slice(2)}Aa1!`,
+      password: `${crypto.randomBytes(12).toString('base64url')}Aa1!`,
       is_active: true,
       groups: [1],
     });
@@ -65,7 +67,7 @@ export class PaperlessService {
     }
     const { data: account } = await api.post('/api/mail_accounts/', {
       name: email,
-      imap_server: 'mail.cbrains.de',
+      imap_server: this.config.get<string>('MAIL_IMAP_HOST') ?? 'dovecot-mailcow',
       imap_port: 993,
       imap_security: 2,
       username: email,

@@ -16,6 +16,7 @@ import { AuditEvent } from './audit/audit.entity';
 import { AuditModule } from './audit/audit.module';
 import { MailModule } from './mail/mail.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { LdapModule } from './ldap/ldap.module';
 
 @Module({
   imports: [
@@ -27,10 +28,11 @@ import { CalendarModule } from './calendar/calendar.module';
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
         entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary, SignalTicket, AuditEvent],
-        synchronize: true, // auto-creates onboarding_events table on first boot
+        synchronize: true,
         ssl: config.get('DATABASE_SSL') === 'true' ? { rejectUnauthorized: false } : false,
       }),
     }),
+    LdapModule,
     BootstrapModule,
     UsersModule,
     AdminModule,

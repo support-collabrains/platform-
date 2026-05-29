@@ -24,6 +24,9 @@ volumes:
   signal_data:
   backup_data:
   ollama_data:
+  radicale_data:
+  immich_data:
+  immich_db_data:
 
 services:
 
@@ -361,4 +364,81 @@ services:
     depends_on:
       - paperless
       - ollama
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.paperless-gpt.rule=Host(`gpt.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.paperless-gpt.entrypoints=websecure"
+      - "traefik.http.routers.paperless-gpt.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.paperless-gpt.middlewares=authentik-forward@docker"
+      - "traefik.http.services.paperless-gpt.loadbalancer.server.port=8080"
+
+  # ── Radicale (CalDAV / CardDAV) ──────────────────────────────────────────
+  radicale:
+    image: tomsquest/docker-radicale:latest
+    restart: unless-stopped
+    environment:
+      RADICALE_CONFIG: /config/radicale.cfg
+    volumes:
+      - radicale_data:/data
+      - ./config/radicale.cfg:/config/radicale.cfg:ro
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.radicale.rule=Host(`cal.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.radicale.entrypoints=websecure"
+      - "traefik.http.routers.radicale.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.radicale.middlewares=authentik-forward@docker"
+      - "traefik.http.services.radicale.loadbalancer.server.port=5232"
+
+  # ── Immich (foto-archief) ────────────────────────────────────────────────
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    restart: unless-stopped
+    environment:
+      DB_HOSTNAME: immich-db
+      DB_USERNAME: immich
+      DB_PASSWORD: ${IMMICH_DB_PASS:-immich_secret}
+      DB_DATABASE_NAME: immich
+      REDIS_HOSTNAME: immich-redis
+      UPLOAD_LOCATION: /usr/src/app/upload
+      JWT_SECRET: ${IMMICH_JWT_SECRET:-changeme_immich_jwt}
+      IMMICH_SERVER_URL: https://fotos.${PRIMARY_DOMAIN}
+    volumes:
+      - immich_data:/usr/src/app/upload
+    depends_on:
+      - immich-db
+      - immich-redis
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.immich.rule=Host(`fotos.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.immich.entrypoints=websecure"
+      - "traefik.http.routers.immich.tls.certresolver=letsencrypt"
+      - "traefik.http.services.immich.loadbalancer.server.port=2283"
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    restart: unless-stopped
+    volumes:
+      - immich_data:/cache
+    networks: [platform]
+
+  immich-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+
+  immich-db:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: immich
+      POSTGRES_PASSWORD: ${IMMICH_DB_PASS:-immich_secret}
+      POSTGRES_DB: immich
+    volumes:
+      - immich_db_data:/var/lib/postgresql/data
     networks: [platform]

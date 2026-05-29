@@ -26,6 +26,12 @@ export class SignalTicket {
   @Column({ default: 'pending_confirm' })
   status: string;
 
+  @Column({ type: 'date', nullable: true })
+  dueDate: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  notes: string | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

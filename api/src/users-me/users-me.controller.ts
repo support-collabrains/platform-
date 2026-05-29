@@ -1,8 +1,9 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { InternalSecretGuard } from './internal-secret.guard';
 import { UsersMeService, UserPreferences } from './users-me.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { AuditService } from '../audit/audit.service';
+import { CalendarService } from '../calendar/calendar.service';
 
 @Controller('users/me')
 @UseGuards(InternalSecretGuard)
@@ -11,6 +12,7 @@ export class UsersMeController {
     private readonly service: UsersMeService,
     private readonly tickets: TicketsService,
     private readonly audit: AuditService,
+    private readonly calendar: CalendarService,
   ) {}
 
   @Get('profile')
@@ -59,8 +61,11 @@ export class UsersMeController {
   }
 
   @Get('tickets')
-  async getTickets(@Headers('x-authentik-username') username: string): Promise<object> {
-    const ticketList = await this.tickets.getTicketsForUser(username);
+  async getTickets(
+    @Headers('x-authentik-username') username: string,
+    @Query('status') status?: string,
+  ): Promise<object> {
+    const ticketList = await this.tickets.getTicketsForUser(username, status);
     return { tickets: ticketList };
   }
 
@@ -69,9 +74,9 @@ export class UsersMeController {
   async updateTicket(
     @Headers('x-authentik-username') username: string,
     @Param('id') id: string,
-    @Body() body: { status: 'done' | 'open' },
+    @Body() body: { status: 'done' | 'open'; notes?: string },
   ): Promise<object> {
-    const ok = await this.tickets.updateTicket(id, username, body.status);
+    const ok = await this.tickets.updateTicket(id, username, body.status, body.notes);
     if (ok && body.status === 'done') {
       await this.audit.log(username, 'ticket.done', id);
     }
@@ -86,5 +91,35 @@ export class UsersMeController {
   ): Promise<object> {
     const ok = await this.tickets.deleteTicket(id, username);
     return { ok };
+  }
+
+  @Get('calendar/events')
+  async getCalendarEvents(
+    @Headers('x-authentik-username') username: string,
+    @Query('from') fromStr?: string,
+    @Query('to') toStr?: string,
+  ): Promise<object> {
+    const from = fromStr ? new Date(fromStr) : new Date();
+    const to = toStr ? new Date(toStr) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const events = await this.calendar.getEvents(username, from, to);
+    return { events };
+  }
+
+  @Post('calendar/events')
+  @HttpCode(201)
+  async createCalendarEvent(
+    @Headers('x-authentik-username') username: string,
+    @Body() body: { summary: string; start: string; end: string; location?: string; description?: string; allDay?: boolean },
+  ): Promise<object> {
+    const uid = await this.calendar.createEvent(username, {
+      summary: body.summary,
+      start: body.start,
+      end: body.end,
+      location: body.location,
+      description: body.description,
+      allDay: body.allDay ?? false,
+    });
+    await this.audit.log(username, 'calendar.event.create', uid, { summary: body.summary, start: body.start });
+    return { uid };
   }
 }

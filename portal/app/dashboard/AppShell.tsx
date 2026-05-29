@@ -4,7 +4,7 @@
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Home, Mail, FileText, User } from 'lucide-react';
+import { Home, Mail, FileText, User, CheckSquare } from 'lucide-react';
 import { LangContext } from './LangContext';
 import { translations, type Lang } from './lang';
 
@@ -16,6 +16,7 @@ interface Props {
 
 const NAV_HREFS = [
   { href: '/dashboard', icon: Home },
+  { href: '/dashboard/tasks', icon: CheckSquare },
   { href: '/dashboard/mail', icon: Mail },
   { href: '/dashboard/docs', icon: FileText },
   { href: '/dashboard/profile', icon: User },
@@ -24,12 +25,17 @@ const NAV_HREFS = [
 export default function AppShell({ children, username }: Props) {
   const pathname = usePathname();
   const [unreadMail, setUnreadMail] = useState(0);
+  const [openTasks, setOpenTasks] = useState(0);
   const [lang, setLang] = useState<Lang>('nl');
 
   useEffect(() => {
     fetch('/api/me/mail/stats')
       .then(r => r.ok ? r.json() : null)
       .then((d: { unread?: number } | null) => { if (d?.unread != null) setUnreadMail(d.unread); })
+      .catch(() => {});
+    fetch('/api/me/tickets')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { tickets?: unknown[] } | null) => { if (d?.tickets != null) setOpenTasks(d.tickets.length); })
       .catch(() => {});
   }, []);
 
@@ -46,12 +52,15 @@ export default function AppShell({ children, username }: Props) {
 
   const PAGE_TITLES: Record<string, string> = {
     '/dashboard': t.titleHome,
+    '/dashboard/tasks': t.titleTasks,
+    '/dashboard/calendar': t.titleCalendar,
+    '/dashboard/photos': t.titlePhotos,
     '/dashboard/mail': t.titleMail,
     '/dashboard/docs': t.titleDocs,
     '/dashboard/profile': t.titleProfile,
   };
 
-  const NAV_LABELS = [t.navHome, t.navMail, t.navDocs, t.navProfile];
+  const NAV_LABELS = [t.navHome, t.navTasks, t.navMail, t.navDocs, t.navProfile];
 
   const title = PAGE_TITLES[pathname] ?? t.titleFallback;
 
@@ -92,6 +101,11 @@ export default function AppShell({ children, username }: Props) {
                   {href === '/dashboard/mail' && unreadMail > 0 && (
                     <span className="absolute -top-1.5 -right-2 bg-red-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none">
                       {unreadMail > 99 ? '99+' : unreadMail}
+                    </span>
+                  )}
+                  {href === '/dashboard/tasks' && openTasks > 0 && (
+                    <span className="absolute -top-1.5 -right-2 bg-cyan-500 text-white text-[9px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 leading-none">
+                      {openTasks > 99 ? '99+' : openTasks}
                     </span>
                   )}
                 </div>

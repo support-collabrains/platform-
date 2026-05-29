@@ -158,16 +158,23 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           continue;
         }
 
-        // /taak, /aufgabe, /task — create ticket
+        // /taak, /aufgabe, /task — create ticket (optional: "op DD-MM" or "op DD-MM-YYYY")
         const taskMatch = text.match(/^\/(?:taak|aufgabe|task)\s+(.+)$/i);
         if (taskMatch) {
-          await this.handleCreateTicket(sender, taskMatch[1].trim());
+          const { title, dueDate } = this.parseTaskText(taskMatch[1].trim());
+          await this.handleCreateTicket(sender, title, dueDate);
           continue;
         }
 
         // /taken, /aufgaben, /tasks — list open tickets
         if (/^\/(?:taken|aufgaben|tasks)$/i.test(text)) {
           await this.handleListTickets(sender);
+          continue;
+        }
+
+        // /agenda — today's agenda
+        if (/^\/agenda$/i.test(text)) {
+          await this.handleAgenda(sender);
           continue;
         }
 
@@ -226,7 +233,20 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleCreateTicket(phone: string, title: string): Promise<void> {
+  private parseTaskText(raw: string): { title: string; dueDate?: string } {
+    // Match "op DD-MM" or "op DD-MM-YYYY" at the end of the text
+    const match = raw.match(/^(.+?)\s+op\s+(\d{1,2}-\d{1,2}(?:-\d{4})?)$/i);
+    if (!match) return { title: raw };
+    const title = match[1].trim();
+    const parts = match[2].split('-').map(Number);
+    const day = parts[0];
+    const month = parts[1];
+    const year = parts[2] ?? new Date().getFullYear();
+    const dueDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return { title, dueDate };
+  }
+
+  private async handleCreateTicket(phone: string, title: string, dueDate?: string): Promise<void> {
     const user = await this.findUserByPhone(phone);
     if (!user) {
       await this.sendSignal(phone, '❌ Geen account gevonden voor dit nummer.');
@@ -234,9 +254,9 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     }
     const lang = await this.getLanguageForPhone(phone);
     const t = this.tickets.i18n(lang);
-    await this.tickets.createPending(user.username, phone, title);
-    this.logger.log(`Ticket pending confirmation for ${user.username}: ${title}`);
-    await this.sendSignal(phone, t.created(title));
+    await this.tickets.createPending(user.username, phone, title, dueDate);
+    this.logger.log(`Ticket pending confirmation for ${user.username}: ${title}${dueDate ? ` (due ${dueDate})` : ''}`);
+    await this.sendSignal(phone, t.created(title, dueDate));
   }
 
   private async handleConfirmTicket(phone: string): Promise<boolean> {
@@ -269,7 +289,32 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
       await this.sendSignal(phone, t.listEmpty());
       return;
     }
-    const lines = [t.listHeader(), ...open.map((tk) => t.listItem(tk.seq, tk.title))];
+    const lines = [t.listHeader(), ...open.map((tk) => t.listItem(tk.seq, tk.title, tk.dueDate))];
+    await this.sendSignal(phone, lines.join('\n'));
+  }
+
+  private async handleAgenda(phone: string): Promise<void> {
+    const user = await this.findUserByPhone(phone);
+    if (!user) {
+      await this.sendSignal(phone, '❌ Geen account gevonden voor dit nummer.');
+      return;
+    }
+    const lang = await this.getLanguageForPhone(phone);
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Open tasks due today or overdue
+    const open = await this.tickets.listOpen(user.username);
+    const due = open.filter(tk => tk.dueDate && tk.dueDate <= today);
+
+    if (!due.length) {
+      const msg = { nl: '📅 Geen taken gepland voor vandaag.', de: '📅 Keine Aufgaben für heute geplant.', en: '📅 No tasks scheduled for today.' };
+      await this.sendSignal(phone, msg[lang] ?? msg.nl);
+      return;
+    }
+
+    const header = { nl: `📅 Agenda voor vandaag:\n`, de: `📅 Agenda für heute:\n`, en: `📅 Today's agenda:\n` };
+    const t = this.tickets.i18n(lang);
+    const lines = [header[lang] ?? header.nl, ...due.map(tk => t.listItem(tk.seq, tk.title, tk.dueDate))];
     await this.sendSignal(phone, lines.join('\n'));
   }
 
@@ -473,8 +518,10 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           ``,
           `📌 Taken`,
           `/taak [beschrijving] — maak een nieuwe taak aan`,
+          `/taak [beschrijving] op DD-MM — taak met vervaldatum`,
           `/taken — bekijk openstaande taken`,
           `/klaar [nr] — markeer taak als afgerond`,
+          `/agenda — taken die vandaag vervallen`,
           ``,
           `📞 2e telefoonnummer`,
           `/phone2 +316xxxxxxxx`,
@@ -507,8 +554,10 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           ``,
           `📌 Aufgaben`,
           `/aufgabe [beschreibung] — neue Aufgabe erstellen`,
+          `/aufgabe [beschreibung] am TT.MM — Aufgabe mit Fälligkeit`,
           `/aufgaben — offene Aufgaben anzeigen`,
           `/fertig [nr] — Aufgabe als erledigt markieren`,
+          `/agenda — heute fällige Aufgaben`,
           ``,
           `📞 2. Telefonnummer`,
           `/phone2 +4917xxxxxxxx`,
@@ -541,8 +590,10 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
           ``,
           `📌 Tasks`,
           `/task [description] — create a new task`,
+          `/task [description] on DD-MM — task with due date`,
           `/tasks — view open tasks`,
           `/done [nr] — mark task as done`,
+          `/agenda — tasks due today`,
           ``,
           `📞 Second phone number`,
           `/phone2 +4917xxxxxxxx`,

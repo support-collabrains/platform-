@@ -7,6 +7,7 @@ import axios from 'axios';
 import { DocDocument, DocNotification, DocSummary } from './document.entity';
 import { OllamaService } from './ollama.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../notifications/push.service';
 import { TicketsService } from '../tickets/tickets.service';
 
 interface SummaryJob {
@@ -22,6 +23,7 @@ interface SummaryJob {
 export class DocumentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DocumentsService.name);
   private queue: Queue;
+  private classifyQueue: Queue;
   private worker: Worker;
   private poller: ReturnType<typeof setInterval>;
 
@@ -37,6 +39,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly ollama: OllamaService,
     private readonly notifications: NotificationsService,
+    private readonly push: PushService,
     private readonly tickets: TicketsService,
     @InjectRepository(DocDocument) private readonly docRepo: Repository<DocDocument>,
     @InjectRepository(DocNotification) private readonly notifRepo: Repository<DocNotification>,
@@ -56,6 +59,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     const conn = { url: redisUrl };
 
     this.queue = new Queue('doc-summary', { connection: conn });
+    this.classifyQueue = new Queue('doc-classify', { connection: conn });
 
     this.worker = new Worker<SummaryJob>(
       'doc-summary',
@@ -77,6 +81,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     clearInterval(this.poller);
     await this.worker?.close();
     await this.queue?.close();
+    await this.classifyQueue?.close();
   }
 
   // Called by Paperless post-consume script via POST /documents/consumed
@@ -88,8 +93,23 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     const doc = await this.docRepo.save(this.docRepo.create({ paperlessId, owner, title }));
     this.logger.log(`New document consumed: ${title} (paperless #${paperlessId}, owner: ${owner})`);
 
-    // Trigger paperless-gpt AI classification in background
+    // Trigger paperless-gpt AI classification tag in background
     this.tagDocumentForGpt(paperlessId).catch(() => {});
+
+    // Enqueue Ollama classification job
+    this.classifyQueue.add('classify', { paperlessId, username: owner, title }, {
+      removeOnComplete: 100,
+      removeOnFail: 200,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 10_000 },
+    }).catch(() => {});
+
+    // Web push notification (non-fatal)
+    this.push.sendToUser(owner, {
+      title: 'Nieuw document ontvangen',
+      body: title,
+      url: `${this.portalOrigin}/dashboard/docs`,
+    }).catch(() => {});
 
     const { phones, signalDocNotify, language } = await this.getPhonesAndPrefsForUser(owner);
     if (!signalDocNotify) {
@@ -194,6 +214,13 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
 
         // ✅ — confirm pending ticket first, then queue document summary
         const isApproval = text.includes('✅') || reaction === '✅';
+
+        // Free-form NLU: only for non-empty messages that didn't match any command and aren't reactions
+        if (!isApproval && !reaction && text.length > 0) {
+          await this.handleFreeText(sender, text);
+          continue;
+        }
+
         if (!isApproval) continue;
 
         // Check pending ticket confirmation first
@@ -333,6 +360,66 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     }
     this.logger.log(`Ticket #${seq} marked done for ${user.username}`);
     await this.sendSignal(phone, t.markedDone(ticket.seq, ticket.title));
+  }
+
+  private async handleFreeText(phone: string, text: string): Promise<void> {
+    const lang = await this.getLanguageForPhone(phone);
+    this.logger.log(`NLU processing for ${phone.slice(0, 8)}***: "${text.slice(0, 60)}"`);
+
+    const intent = await this.ollama.parseIntent(text, lang);
+    this.logger.log(`NLU result: intent=${intent.intent} confidence=${intent.confidence}`);
+
+    if (intent.confidence < 0.4) {
+      const fallback = lang === 'de'
+        ? `🤔 Ich habe das nicht ganz verstanden. Tippe /help für eine Übersicht der Befehle.`
+        : lang === 'en'
+          ? `🤔 I didn't quite understand that. Type /help for an overview of commands.`
+          : `🤔 Ik begreep dat niet helemaal. Typ /help voor een overzicht van commando's.`;
+      await this.sendSignal(phone, fallback);
+      return;
+    }
+
+    switch (intent.intent) {
+      case 'create_task': {
+        const title = intent.title?.trim() || text;
+        const dueDate = intent.due_date ?? undefined;
+        await this.handleCreateTicket(phone, title, dueDate);
+        break;
+      }
+      case 'list_tasks':
+        await this.handleListTickets(phone);
+        break;
+      case 'complete_task': {
+        if (intent.task_number) {
+          await this.handleMarkTicketDone(phone, intent.task_number);
+        } else {
+          const user = await this.findUserByPhone(phone);
+          const open = user ? await this.tickets.listOpen(user.username) : [];
+          if (open.length === 1) {
+            await this.handleMarkTicketDone(phone, open[0].seq);
+          } else if (open.length === 0) {
+            await this.sendSignal(phone, this.tickets.i18n(lang).listEmpty());
+          } else {
+            await this.handleListTickets(phone);
+          }
+        }
+        break;
+      }
+      case 'agenda':
+        await this.handleAgenda(phone);
+        break;
+      default:
+        if (intent.reply) {
+          await this.sendSignal(phone, intent.reply);
+        } else {
+          const fallback2 = lang === 'de'
+            ? `🤔 Ich bin mir nicht sicher, was du meinst. Tippe /help für Hilfe.`
+            : lang === 'en'
+              ? `🤔 I'm not sure what you mean. Type /help for help.`
+              : `🤔 Ik weet niet precies wat je bedoelt. Typ /help voor hulp.`;
+          await this.sendSignal(phone, fallback2);
+        }
+    }
   }
 
   private async handleSetPhone2(senderPhone: string, arg: string): Promise<void> {

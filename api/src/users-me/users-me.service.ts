@@ -27,6 +27,13 @@ interface PaperlessDoc {
   id: number;
   title: string;
   created: string;
+  document_type?: number | null;
+}
+
+interface PaperlessDocType {
+  id: number;
+  name: string;
+  document_count: number;
 }
 
 interface NotificationRow {
@@ -74,10 +81,23 @@ export class UsersMeService {
     try {
       const { data } = await axios.get(`${this.paperlessUrl}/api/documents/`, {
         headers: { Authorization: `Token ${this.paperlessToken}` },
-        params: { owner__username: username, ordering: '-created', page_size: 50 },
+        params: { owner__username: username, ordering: '-created', page_size: 100 },
         timeout: 10_000,
       });
       return (data.results as PaperlessDoc[]) ?? [];
+    } catch {
+      return [];
+    }
+  }
+
+  async getDocumentTypes(): Promise<PaperlessDocType[]> {
+    try {
+      const { data } = await axios.get(`${this.paperlessUrl}/api/document_types/`, {
+        headers: { Authorization: `Token ${this.paperlessToken}` },
+        params: { page_size: 100 },
+        timeout: 10_000,
+      });
+      return (data.results as PaperlessDocType[]) ?? [];
     } catch {
       return [];
     }

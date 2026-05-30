@@ -22,7 +22,7 @@ export class CalendarService {
   }
 
   private collectionUrl(username: string): string {
-    return `${this.baseUrl}/${username}/calendar/`;
+    return `${this.baseUrl}/${username.toLowerCase()}/calendar/`;
   }
 
   async ensureCollection(username: string): Promise<void> {

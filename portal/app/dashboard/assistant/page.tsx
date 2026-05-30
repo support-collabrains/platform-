@@ -47,6 +47,9 @@ function MessageBubble({ msg }: { msg: Message }) {
   );
 }
 
+const STORAGE_KEY = 'diggi-chat-v1';
+const MAX_STORED = 100;
+
 export default function AssistantPage() {
   const t = useT();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -54,6 +57,22 @@ export default function AssistantPage() {
   const [thinking, setThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Restore chat from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) setMessages(JSON.parse(saved) as Message[]);
+    } catch { /* ignore */ }
+  }, []);
+
+  // Persist chat to localStorage whenever messages change
+  useEffect(() => {
+    if (messages.length === 0) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages.slice(-MAX_STORED)));
+    } catch { /* ignore quota errors */ }
+  }, [messages]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -102,7 +121,10 @@ export default function AssistantPage() {
     }
   };
 
-  const clear = () => setMessages([]);
+  const clear = () => {
+    setMessages([]);
+    try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+  };
 
   const isEmpty = messages.length === 0;
 

@@ -45,6 +45,7 @@ export default function PhotosGallery() {
   const [lightboxIndex, setLightboxIndex] = useState(-1);
 
   useEffect(() => {
+    // Albums: Immich v2 GET /api/albums still works
     request<ImmichAlbum[]>('/api/gateway/immich/albums')
       .then(data => setAlbums(Array.isArray(data) ? data : []))
       .catch(() => {});
@@ -57,13 +58,23 @@ export default function PhotosGallery() {
 
     const params = new URLSearchParams({ page: String(pageNum), size: String(PAGE_SIZE) });
 
+    // Immich v2.7+ removed GET /api/assets list endpoint.
+    // All-photos: use our server-side route that calls POST /api/search/metadata.
+    // Album assets: GET /api/albums/{id} still works (returns album with assets).
     const endpoint = albumId
-      ? `/api/gateway/immich/albums/${albumId}/assets?${params}`
-      : `/api/gateway/immich/assets?${params}`;
+      ? `/api/gateway/immich/albums/${albumId}?${params}`
+      : `/api/me/photos?${params}`;
 
-    request<ImmichAsset[] | { assets?: ImmichAsset[] }>(endpoint)
+    request<ImmichAsset[] | { assets?: ImmichAsset[]; albumAssets?: { items?: ImmichAsset[] } }>(endpoint)
       .then(raw => {
-        const list: ImmichAsset[] = Array.isArray(raw) ? raw : ((raw as { assets?: ImmichAsset[] }).assets ?? []);
+        let list: ImmichAsset[];
+        if (Array.isArray(raw)) {
+          list = raw;
+        } else if ('albumAssets' in raw && raw.albumAssets?.items) {
+          list = raw.albumAssets.items as ImmichAsset[];
+        } else {
+          list = (raw as { assets?: ImmichAsset[] }).assets ?? [];
+        }
         setAssets(prev => append ? [...prev, ...list] : list);
         setHasMore(list.length === PAGE_SIZE);
       })

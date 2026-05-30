@@ -50,7 +50,15 @@ export class MailImapService {
     const authUser = listData.results?.[0];
     if (!authUser) throw new Error(`User not found: ${username}`);
 
-    const email = authUser.email as string;
+    // Use the platform mailbox address. If the Authentik email is on the platform domain
+    // (e.g. czw@cbrains.de), use it directly. Otherwise derive username@mailDomain so that
+    // gmail / personal addresses don't get used as IMAP credentials.
+    const mailDomain = this.config.get('MAIL_DOMAIN') ?? 'cbrains.de';
+    const authentikEmail = (authUser.email as string | undefined) ?? '';
+    const email = authentikEmail.toLowerCase().endsWith(`@${mailDomain}`)
+      ? authentikEmail.toLowerCase()
+      : `${username.toLowerCase()}@${mailDomain}`;
+
     let password = (authUser.attributes as Record<string, string>)?.mail_imap_password;
 
     if (!password) {

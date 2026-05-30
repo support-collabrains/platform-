@@ -52,14 +52,18 @@ export class DashboardController {
 
   private async fetchRecentPhotos(): Promise<unknown[]> {
     if (!this.immichApiKey) return [];
-    // Immich is a shared household album — admin key returns shared library (by design).
-    // Mutation is prevented: this endpoint is read-only aggregation.
-    const res = await firstValueFrom(
-      this.http.get<unknown[]>(`${this.immichUrl}/api/assets`, {
-        headers: { 'x-api-key': this.immichApiKey },
-        params: { take: 12, skip: 0 },
-      }),
-    );
-    return Array.isArray(res.data) ? res.data : [];
+    // Immich v2.7+ removed GET /api/assets list; use POST /api/search/metadata instead.
+    try {
+      const res = await firstValueFrom(
+        this.http.post<{ assets?: { items?: unknown[] } }>(
+          `${this.immichUrl}/api/search/metadata`,
+          { page: 1, size: 12 },
+          { headers: { 'x-api-key': this.immichApiKey } },
+        ),
+      );
+      return res.data?.assets?.items ?? [];
+    } catch {
+      return [];
+    }
   }
 }

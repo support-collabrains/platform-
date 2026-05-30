@@ -104,24 +104,36 @@ export class UsersMeService {
   }
 
   async getDocumentById(paperlessId: number, username: string): Promise<PaperlessDoc | null> {
-    // Ownership check: must be in local DB as this user's doc, OR Paperless owner matches
+    // Fail-closed: always verify ownership against Paperless with owner__username filter.
+    // If local DB has a record for a different owner, deny immediately.
     const local = await this.docRepo.findOne({ where: { paperlessId } });
     if (local && local.owner !== username) return null;
 
     try {
       const { data } = await axios.get(`${this.paperlessUrl}/api/documents/${paperlessId}/`, {
         headers: { Authorization: `Token ${this.paperlessToken}` },
+        params: { owner__username: username },
         timeout: 10_000,
       });
-      return data as PaperlessDoc;
+      const doc = data as PaperlessDoc & { owner_username?: string };
+      // Secondary check: if Paperless returned owner info, confirm it matches
+      if (doc.owner_username && doc.owner_username !== username) return null;
+      return doc;
     } catch {
       return null;
     }
   }
 
   async getDocumentPreview(paperlessId: number, username: string): Promise<AxiosResponse<Buffer> | null> {
+    // Fail-closed: confirm ownership before serving binary content
     const local = await this.docRepo.findOne({ where: { paperlessId } });
     if (local && local.owner !== username) return null;
+
+    // When no local record exists, verify ownership via Paperless metadata first
+    if (!local) {
+      const owned = await this.getDocumentById(paperlessId, username);
+      if (!owned) return null;
+    }
 
     try {
       return await axios.get<Buffer>(`${this.paperlessUrl}/api/documents/${paperlessId}/preview/`, {

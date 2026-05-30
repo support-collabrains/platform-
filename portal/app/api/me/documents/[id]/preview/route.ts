@@ -21,13 +21,20 @@ export async function GET(
 
   if (!res.ok) return NextResponse.json({ error: 'Niet gevonden' }, { status: res.status });
 
-  const contentType = res.headers.get('content-type') ?? 'application/pdf';
+  // Allowlist safe render types; force download for everything else to prevent XSS
+  const SAFE_INLINE = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
+  const rawCt = (res.headers.get('content-type') ?? 'application/octet-stream').split(';')[0].trim().toLowerCase();
+  const safeCt = SAFE_INLINE.has(rawCt) ? rawCt : 'application/octet-stream';
+  const disposition = SAFE_INLINE.has(rawCt) ? 'inline' : 'attachment';
+
   const buffer = await res.arrayBuffer();
   return new NextResponse(buffer, {
     status: 200,
     headers: {
-      'content-type': contentType,
-      'content-disposition': 'inline',
+      'content-type': safeCt,
+      'content-disposition': disposition,
+      'x-content-type-options': 'nosniff',
+      'content-security-policy': "sandbox; default-src 'none'",
     },
   });
 }

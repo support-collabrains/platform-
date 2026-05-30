@@ -20,7 +20,9 @@ export class ContactsService {
   }
 
   private addressbookUrl(username: string): string {
-    return `${this.baseUrl}/${username}/contacts/`;
+    // Reject usernames that could traverse into other collections
+    if (!/^[a-z0-9._-]+$/i.test(username)) throw new Error(`Invalid username: ${username}`);
+    return `${this.baseUrl}/${encodeURIComponent(username)}/contacts/`;
   }
 
   async ensureAddressbook(username: string): Promise<void> {
@@ -85,16 +87,27 @@ export class ContactsService {
 
   // ----- vCard 3.0 builder -----
 
+  // Sanitize vCard field values: strip CR/LF (CRLF injection) and escape
+  // special characters per RFC 6350 §3.4 (backslash, comma, semicolon).
+  private escapeVCardValue(v: string): string {
+    return v
+      .replace(/[\r\n]+/g, ' ')         // strip line breaks — prevents CRLF injection
+      .replace(/\\/g, '\\\\')            // escape backslash first
+      .replace(/,/g, '\\,')             // escape comma
+      .replace(/;/g, '\\;');            // escape semicolon
+  }
+
   private buildVCard(contact: Contact): string {
+    const esc = this.escapeVCardValue.bind(this);
     const lines: string[] = [
       'BEGIN:VCARD',
       'VERSION:3.0',
-      `UID:${contact.uid}`,
-      `FN:${contact.fullName}`,
+      `UID:${esc(contact.uid)}`,
+      `FN:${esc(contact.fullName)}`,
     ];
-    if (contact.email) lines.push(`EMAIL:${contact.email}`);
-    if (contact.phone) lines.push(`TEL:${contact.phone}`);
-    if (contact.organization) lines.push(`ORG:${contact.organization}`);
+    if (contact.email) lines.push(`EMAIL:${esc(contact.email)}`);
+    if (contact.phone) lines.push(`TEL:${esc(contact.phone)}`);
+    if (contact.organization) lines.push(`ORG:${esc(contact.organization)}`);
     lines.push('END:VCARD');
     return lines.join('\r\n');
   }

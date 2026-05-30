@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Queue, Worker } from 'bullmq';
+import { Redis } from 'ioredis';
 import axios from 'axios';
 import { DocDocument, DocNotification, DocSummary } from './document.entity';
 import { OllamaService } from './ollama.service';
@@ -32,6 +33,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
   private readonly authentikUrl: string;
   private readonly authentikToken: string;
   private readonly portalOrigin: string;
+  private redis: Redis;
 
   constructor(
     private readonly config: ConfigService,
@@ -67,6 +69,9 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Summary job failed for doc ${job?.data?.documentId}: ${err.message}`),
     );
 
+    this.redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: null });
+    await this.redis.connect().catch(() => {});
+
     this.poller = setInterval(() => this.pollSignal(), 30_000);
 
     // Pull Ollama model in background — may take minutes on first boot
@@ -77,6 +82,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     clearInterval(this.poller);
     await this.worker?.close();
     await this.queue?.close();
+    await this.redis?.quit().catch(() => {});
   }
 
   // Called by Paperless post-consume script via POST /documents/consumed
@@ -142,6 +148,16 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`Signal msg from=${sender || '(empty)'} number=${senderPhone || 'null'} uuid=${senderUuid || 'null'} text="${text.slice(0, 60)}" reaction="${reaction}"`);
 
         if (!sender) continue;
+
+        // Skip messages already handled by signal-consumer (Paperless bridge)
+        const msgTs = envelope.timestamp ?? envelope.dataMessage?.timestamp;
+        if (msgTs && this.redis) {
+          const processed = await this.redis.exists(`signal:processed:${msgTs}`);
+          if (processed) {
+            this.logger.debug(`Skipping already-processed message ts=${msgTs}`);
+            continue;
+          }
+        }
 
         // /help
         if (/^\/help$/i.test(text)) {

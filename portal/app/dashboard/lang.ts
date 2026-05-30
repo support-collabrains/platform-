@@ -76,6 +76,10 @@ const nl = {
   // Docs
   noArchive: 'Geen archief beschikbaar',
   selectCategory: 'Selecteer een categorie',
+  // Error handling
+  errorRetry: 'Opnieuw proberen',
+  errorServiceUnavailable: 'Service niet beschikbaar',
+  errorLoading: 'Fout bij laden',
 };
 
 const de: typeof nl = {
@@ -150,6 +154,10 @@ const de: typeof nl = {
   calendarAllDay: 'Ganzer Tag',
   noArchive: 'Kein Archiv verfügbar',
   selectCategory: 'Kategorie auswählen',
+  // Error handling
+  errorRetry: 'Erneut versuchen',
+  errorServiceUnavailable: 'Dienst nicht verfügbar',
+  errorLoading: 'Fehler beim Laden',
 };
 
 const en: typeof nl = {
@@ -224,6 +232,10 @@ const en: typeof nl = {
   calendarAllDay: 'All day',
   noArchive: 'No archive available',
   selectCategory: 'Select a category',
+  // Error handling
+  errorRetry: 'Try again',
+  errorServiceUnavailable: 'Service unavailable',
+  errorLoading: 'Error loading',
 };
 
 export const translations: Record<Lang, typeof nl> = { nl, de, en };

@@ -7,7 +7,6 @@ import axios from 'axios';
 import { DocDocument, DocNotification, DocSummary } from './document.entity';
 import { OllamaService } from './ollama.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { PushService } from '../notifications/push.service';
 import { TicketsService } from '../tickets/tickets.service';
 
 interface SummaryJob {
@@ -23,7 +22,6 @@ interface SummaryJob {
 export class DocumentsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DocumentsService.name);
   private queue: Queue;
-  private classifyQueue: Queue;
   private worker: Worker;
   private poller: ReturnType<typeof setInterval>;
 
@@ -39,7 +37,6 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     private readonly config: ConfigService,
     private readonly ollama: OllamaService,
     private readonly notifications: NotificationsService,
-    private readonly push: PushService,
     private readonly tickets: TicketsService,
     @InjectRepository(DocDocument) private readonly docRepo: Repository<DocDocument>,
     @InjectRepository(DocNotification) private readonly notifRepo: Repository<DocNotification>,
@@ -59,7 +56,6 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     const conn = { url: redisUrl };
 
     this.queue = new Queue('doc-summary', { connection: conn });
-    this.classifyQueue = new Queue('doc-classify', { connection: conn });
 
     this.worker = new Worker<SummaryJob>(
       'doc-summary',
@@ -81,7 +77,6 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     clearInterval(this.poller);
     await this.worker?.close();
     await this.queue?.close();
-    await this.classifyQueue?.close();
   }
 
   // Called by Paperless post-consume script via POST /documents/consumed
@@ -93,23 +88,8 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     const doc = await this.docRepo.save(this.docRepo.create({ paperlessId, owner, title }));
     this.logger.log(`New document consumed: ${title} (paperless #${paperlessId}, owner: ${owner})`);
 
-    // Trigger paperless-gpt AI classification tag in background
+    // Trigger paperless-gpt AI classification in background
     this.tagDocumentForGpt(paperlessId).catch(() => {});
-
-    // Enqueue Ollama classification job
-    this.classifyQueue.add('classify', { paperlessId, username: owner, title }, {
-      removeOnComplete: 100,
-      removeOnFail: 200,
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 10_000 },
-    }).catch(() => {});
-
-    // Web push notification (non-fatal)
-    this.push.sendToUser(owner, {
-      title: 'Nieuw document ontvangen',
-      body: title,
-      url: `${this.portalOrigin}/dashboard/docs`,
-    }).catch(() => {});
 
     const { phones, signalDocNotify, language } = await this.getPhonesAndPrefsForUser(owner);
     if (!signalDocNotify) {
@@ -215,7 +195,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         // ✅ — confirm pending ticket first, then queue document summary
         const isApproval = text.includes('✅') || reaction === '✅';
 
-        // Free-form NLU: only for non-empty messages that didn't match any command and aren't reactions
+        // Free-form NLU: non-empty messages that matched no command and are not reactions
         if (!isApproval && !reaction && text.length > 0) {
           await this.handleFreeText(sender, text);
           continue;
@@ -422,7 +402,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  private async handleSetPhone2(senderPhone: string, arg: string): Promise<void> {
+    private async handleSetPhone2(senderPhone: string, arg: string): Promise<void> {
     const user = await this.findUserByPhone(senderPhone);
     if (!user) {
       await this.sendSignal(senderPhone, '❌ Geen account gevonden voor dit nummer.');

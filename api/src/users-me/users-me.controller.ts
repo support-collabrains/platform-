@@ -1,14 +1,9 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
-import type { Response } from 'express';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { InternalSecretGuard } from './internal-secret.guard';
 import { UsersMeService, UserPreferences } from './users-me.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { AuditService } from '../audit/audit.service';
 import { CalendarService } from '../calendar/calendar.service';
-import { ArchiveService } from '../documents/archive.service';
-import { PushService } from '../notifications/push.service';
-import type { WebPushSubscription } from '../notifications/push.service';
-import { MobileconfigService } from '../mobileconfig/mobileconfig.service';
 
 @Controller('users/me')
 @UseGuards(InternalSecretGuard)
@@ -18,9 +13,6 @@ export class UsersMeController {
     private readonly tickets: TicketsService,
     private readonly audit: AuditService,
     private readonly calendar: CalendarService,
-    private readonly archive: ArchiveService,
-    private readonly push: PushService,
-    private readonly mobileconfig: MobileconfigService,
   ) {}
 
   @Get('profile')
@@ -42,7 +34,7 @@ export class UsersMeController {
     return { types: await this.service.getDocumentTypes() };
   }
 
-  @Get('notifications')
+    @Get('notifications')
   async notifications(@Headers('x-authentik-username') username: string): Promise<object> {
     const user = await this.service.resolveUser(username);
     const phones = this.service.getPhonesFromAttributes(user.attributes);
@@ -104,61 +96,6 @@ export class UsersMeController {
   ): Promise<object> {
     const ok = await this.tickets.deleteTicket(id, username);
     return { ok };
-  }
-
-  @Get('tree')
-  async getTree(@Headers('x-authentik-username') username: string): Promise<object> {
-    const tree = await this.archive.getTree(username);
-    return { tree };
-  }
-
-  @Get('push/vapid-key')
-  getPushKey(): object {
-    return { publicKey: this.push.getPublicKey() };
-  }
-
-  @Post('push/subscribe')
-  @HttpCode(200)
-  async pushSubscribe(
-    @Headers('x-authentik-username') username: string,
-    @Body() sub: WebPushSubscription,
-  ): Promise<object> {
-    await this.push.subscribe(username, sub);
-    return { ok: true };
-  }
-
-  @Delete('push/subscribe')
-  @HttpCode(200)
-  async pushUnsubscribe(
-    @Headers('x-authentik-username') username: string,
-    @Body() body: { endpoint: string },
-  ): Promise<object> {
-    await this.push.unsubscribe(username, body.endpoint);
-    return { ok: true };
-  }
-
-  @Get('mobileconfig/token')
-  getMobileconfigToken(@Headers('x-authentik-username') username: string): object {
-    const token = this.mobileconfig.generateToken(username);
-    return { token };
-  }
-
-  @Get('mobileconfig')
-  async getMobileconfig(
-    @Headers('x-authentik-username') username: string,
-    @Res() res: Response,
-  ): Promise<void> {
-    const user = await this.service.resolveUser(username);
-    const mailPassword = (user.attributes as Record<string, string>)?.mail_imap_password ?? '';
-    const plist = this.mobileconfig.buildPlist({
-      username: user.username,
-      email: user.email,
-      name: user.name,
-      mailPassword,
-    });
-    res.setHeader('Content-Type', 'application/x-apple-aspen-config');
-    res.setHeader('Content-Disposition', `attachment; filename="collabrains-${user.username}.mobileconfig"`);
-    res.send(plist);
   }
 
   @Get('calendar/events')

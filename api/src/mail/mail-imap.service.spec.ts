@@ -151,9 +151,9 @@ describe('MailImapService', () => {
       (mysql2.createConnection as jest.Mock).mockResolvedValue(mockConn);
       (mockedBcrypt.hash as jest.Mock).mockResolvedValue('$hash');
 
-      mockedAxios.get.mockResolvedValueOnce({
-        data: { results: [{ pk: 1, email: 'alice@test.com', attributes: {} }] },
-      }) as jest.MockedFunction<typeof axios.get>;
+      mockedAxios.get
+        .mockResolvedValueOnce({ data: { results: [{ pk: 1, email: 'alice@test.com', attributes: {} }] } }) // user lookup
+        .mockResolvedValueOnce({ data: { username: 'alice@test.com' } }) as jest.MockedFunction<typeof axios.get>; // checkMailboxExists → exists
       mockedAxios.patch.mockResolvedValueOnce({ data: {} }) as jest.MockedFunction<typeof axios.patch>;
 
       const creds = await service.getCredentials('alice');

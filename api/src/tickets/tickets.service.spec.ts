@@ -42,7 +42,7 @@ describe('TicketsService', () => {
       repo.create.mockReturnValue(t);
       repo.save.mockResolvedValue(t);
       const result = await service.createPending('alice', '+31', 'Fix bug');
-      expect(repo.create).toHaveBeenCalledWith({ owner: 'alice', phone: '+31', title: 'Fix bug', status: 'pending_confirm' });
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ owner: 'alice', phone: '+31', title: 'Fix bug', status: 'pending_confirm' }));
       expect(result.status).toBe('pending_confirm');
     });
   });

@@ -25,7 +25,11 @@ function makeConfig(): ConfigService {
 }
 
 function makeDocRepo(): jest.Mocked<Repository<DocDocument>> {
-  return { findBy: jest.fn() } as unknown as jest.Mocked<Repository<DocDocument>>;
+  return {
+    findBy: jest.fn(),
+    find: jest.fn().mockResolvedValue([]),
+    findOne: jest.fn().mockResolvedValue(null),
+  } as unknown as jest.Mocked<Repository<DocDocument>>;
 }
 
 function makeNotifRepo(): jest.Mocked<Repository<DocNotification>> {

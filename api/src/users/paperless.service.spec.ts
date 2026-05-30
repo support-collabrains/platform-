@@ -18,7 +18,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 
 function makeService(): PaperlessService {
   const cfg = {
-    get: (k: string) => ({ PAPERLESS_INTERNAL_URL: 'http://paperless:8000', PAPERLESS_API_TOKEN: 'tok' }[k] ?? ''),
+    get: (k: string) => ({ PAPERLESS_INTERNAL_URL: 'http://paperless:8000', PAPERLESS_API_TOKEN: 'tok', MAIL_IMAP_HOST: 'mail.cbrains.de' }[k] ?? ''),
   } as unknown as ConfigService;
   return new PaperlessService(cfg);
 }

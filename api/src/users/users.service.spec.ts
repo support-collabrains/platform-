@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { UsersService } from './users.service';
 import { PaperlessService } from './paperless.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { LdapMetadataService } from '../ldap/ldap-metadata.service';
 
 jest.mock('axios');
 jest.mock('fs');
@@ -46,17 +47,26 @@ function makeNotifications(): jest.Mocked<NotificationsService> {
   } as unknown as jest.Mocked<NotificationsService>;
 }
 
+function makeLdapMetadata(): jest.Mocked<LdapMetadataService> {
+  return {
+    setAttributesByPk: jest.fn().mockResolvedValue(undefined),
+    getAttributes: jest.fn().mockResolvedValue({}),
+  } as unknown as jest.Mocked<LdapMetadataService>;
+}
+
 describe('UsersService', () => {
   let service: UsersService;
   let paperless: jest.Mocked<PaperlessService>;
   let notifications: jest.Mocked<NotificationsService>;
+  let ldapMetadata: jest.Mocked<LdapMetadataService>;
   let instance: { get: jest.Mock; post: jest.Mock; patch: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
     paperless = makePaperless();
     notifications = makeNotifications();
-    service = new UsersService(makeConfig(), paperless, notifications);
+    ldapMetadata = makeLdapMetadata();
+    service = new UsersService(makeConfig(), paperless, notifications, ldapMetadata);
 
     instance = { get: jest.fn(), post: jest.fn(), patch: jest.fn() };
     mockedAxios.create.mockReturnValue(instance as unknown as ReturnType<typeof axios.create>);
@@ -177,7 +187,7 @@ describe('UsersService', () => {
 
   describe('createMailcowMailbox', () => {
     it('returns existing attributes.mail_imap_password when mailbox already exists', async () => {
-      instance.get.mockResolvedValueOnce({ data: { local_part: 'alice' } }); // object = exists
+      instance.get.mockResolvedValueOnce({ data: { username: 'alice@mail.test.com', local_part: 'alice' } }); // object with username = exists
       const result = await (service as unknown as {
         createMailcowMailbox: (e: string, n: string, pk: number, attrs: Record<string, string>) => Promise<string | undefined>
       })['createMailcowMailbox']('alice@mail.test.com', 'Alice', 1, { mail_imap_password: 'stored-pw' });

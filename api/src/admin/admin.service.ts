@@ -98,9 +98,7 @@ export class AdminService {
       try {
         const parsed = new URL(rawLink);
         const target = new URL(publicAuth);
-        parsed.host = target.host;
-        parsed.protocol = target.protocol;
-        return parsed.toString();
+        return `${target.origin}${parsed.pathname}${parsed.search}${parsed.hash}`;
       } catch {
         return rawLink.replace(/https?:\/\/[^/]+/, publicAuth);
       }

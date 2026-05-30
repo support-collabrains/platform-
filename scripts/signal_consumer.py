@@ -89,6 +89,18 @@ def ensure_signal_tag() -> int:
     return resp.json()["id"]
 
 
+def send_signal_reply(recipient: str, message: str):
+    """Stuur een tekstbericht terug via Signal API."""
+    try:
+        requests.post(
+            f"{SIGNAL_API_URL}/v2/send",
+            json={"message": message, "number": SIGNAL_SENDER, "recipients": [recipient]},
+            timeout=10,
+        )
+    except Exception as e:
+        print(f"  Antwoord sturen mislukt: {e}", file=sys.stderr)
+
+
 def download_attachment(attachment_id: str) -> tuple[bytes, str]:
     """Download bijlage van Signal API. Geeft (data, filename) terug."""
     resp = requests.get(f"{SIGNAL_API_URL}/v1/attachments/{attachment_id}", timeout=60)
@@ -142,6 +154,17 @@ def process_message(envelope: dict, signal_tag_id: int):
     if not text and not attachments:
         return
 
+    # Beslis of dit een document-upload actie is:
+    # - Altijd bij bijlagen
+    # - Tekst alleen bij !inbox of !document commando
+    INBOX_COMMANDS = ("!inbox", "!document", "!doc", "!opslaan")
+    is_inbox_cmd = text.lower().startswith(INBOX_COMMANDS)
+
+    if not attachments and not is_inbox_cmd:
+        # Gewoon tekstbericht — stuur gebruiksinstructie terug via Signal
+        send_signal_reply(source, "📎 Stuur een bestand om op te slaan in Paperless, of typ !inbox <tekst> om een notitie op te slaan.")
+        return
+
     # Markeer als verwerkt vóór upload om race met NestJS te minimaliseren
     mark_processed(timestamp)
 
@@ -157,22 +180,25 @@ def process_message(envelope: dict, signal_tag_id: int):
             if text:
                 title = f"{text[:60]} (Signal van {source})"
             try:
-                file_data, filename = download_attachment(att_id)
+                file_data, _ = download_attachment(att_id)
                 safe_name = f"signal_{att_id}.{ext}"
                 doc_id = upload_to_paperless(file_data, safe_name, title, signal_tag_id, owner_id)
                 print(f"  → Document aangemaakt: {doc_id}")
             except Exception as e:
                 print(f"  FOUT bij bijlage {att_id}: {e}", file=sys.stderr)
-    elif text:
-        # Tekst zonder bijlage → upload als .txt document
-        title = f"Signal bericht van {source}: {text[:80]}"
+        send_signal_reply(source, f"✅ {len(attachments)} bestand(en) opgeslagen in Paperless.")
+    else:
+        # !inbox commando: tekst als notitie opslaan
+        note_text = text[len(text.split()[0]):].strip() or text
+        title = f"Signal notitie van {source}"
         try:
             doc_id = upload_to_paperless(
-                text.encode("utf-8"), "bericht.txt", title, signal_tag_id, owner_id
+                note_text.encode("utf-8"), "notitie.txt", title, signal_tag_id, owner_id
             )
-            print(f"  → Tekst document aangemaakt: {doc_id}")
+            print(f"  → Notitie aangemaakt: {doc_id}")
+            send_signal_reply(source, "✅ Notitie opgeslagen in Paperless.")
         except Exception as e:
-            print(f"  FOUT bij tekst upload: {e}", file=sys.stderr)
+            print(f"  FOUT bij notitie upload: {e}", file=sys.stderr)
 
 
 def poll_loop():

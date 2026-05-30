@@ -418,9 +418,12 @@ services:
       - AUTHENTIK_BOOTSTRAP_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN}
       - PAPERLESS_INTERNAL_URL=http://paperless:8000
       - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+      - IMMICH_INTERNAL_URL=http://immich-server:2283
+      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
     depends_on:
       - authentik-server
       - paperless
+      - immich-server
     networks:
       - platform
 

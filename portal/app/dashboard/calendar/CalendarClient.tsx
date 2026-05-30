@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Calendar, Plus, Clock, MapPin } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Calendar, Plus, Clock, MapPin, RefreshCw, AlertCircle } from 'lucide-react';
 import { useT } from '../LangContext';
+import { useApiRequest } from '@/hooks/use-api-request';
 
 interface CalEvent {
   uid: string;
@@ -17,17 +18,12 @@ function formatDate(iso: string, allDay: boolean): string {
   try {
     const d = new Date(allDay ? iso + 'T00:00:00' : iso);
     return d.toLocaleDateString('nl-NL', { weekday: 'short', day: 'numeric', month: 'short' });
-  } catch {
-    return iso;
-  }
+  } catch { return iso; }
 }
 
 function formatTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' });
-  } catch {
-    return '';
-  }
+  try { return new Date(iso).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }); }
+  catch { return ''; }
 }
 
 function groupByDate(events: CalEvent[]): { date: string; events: CalEvent[] }[] {
@@ -37,38 +33,37 @@ function groupByDate(events: CalEvent[]): { date: string; events: CalEvent[] }[]
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(ev);
   }
-  return [...map.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, evs]) => ({ date, events: evs }));
+  return [...map.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, evs]) => ({ date, events: evs }));
 }
 
 export default function CalendarClient() {
   const t = useT();
+  const { request } = useApiRequest();
   const [events, setEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ summary: '', start: '', end: '', location: '', allDay: false });
   const [saving, setSaving] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
+    setLoadError(false);
     const from = new Date().toISOString();
     const to = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    fetch(`/api/me/calendar/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
-      .then(r => r.ok ? r.json() : { events: [] })
-      .then((d: { events?: CalEvent[] }) => setEvents(d.events ?? []))
+    request<{ events?: CalEvent[] }>(`/api/me/calendar/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+      .then(d => setEvents(d.events ?? []))
+      .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
-  };
+  }, [request]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const save = async () => {
     if (!form.summary || !form.start) return;
     setSaving(true);
     const start = form.allDay ? form.start : new Date(form.start).toISOString();
-    const end = form.end
-      ? (form.allDay ? form.end : new Date(form.end).toISOString())
-      : start;
+    const end = form.end ? (form.allDay ? form.end : new Date(form.end).toISOString()) : start;
     await fetch('/api/me/calendar/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -86,8 +81,6 @@ export default function CalendarClient() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 space-y-4">
-
-        {/* Add event button */}
         <button
           onClick={() => setShowForm(!showForm)}
           className="w-full flex items-center justify-center gap-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 rounded-2xl py-3 text-sm font-medium transition active:scale-95"
@@ -96,15 +89,9 @@ export default function CalendarClient() {
           {t.calendarAdd}
         </button>
 
-        {/* Add event form */}
         {showForm && (
           <div className="bg-slate-800 rounded-2xl p-4 space-y-3">
-            <input
-              className="w-full bg-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-cyan-500"
-              placeholder="Titel"
-              value={form.summary}
-              onChange={e => setForm(f => ({ ...f, summary: e.target.value }))}
-            />
+            <input className="w-full bg-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-cyan-500" placeholder="Titel" value={form.summary} onChange={e => setForm(f => ({ ...f, summary: e.target.value }))} />
             <label className="flex items-center gap-2 text-sm text-slate-400">
               <input type="checkbox" checked={form.allDay} onChange={e => setForm(f => ({ ...f, allDay: e.target.checked }))} className="rounded" />
               {t.calendarAllDay}
@@ -120,23 +107,13 @@ export default function CalendarClient() {
                 <input type="datetime-local" className="bg-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-cyan-500" value={form.end} onChange={e => setForm(f => ({ ...f, end: e.target.value }))} />
               </div>
             )}
-            <input
-              className="w-full bg-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-cyan-500"
-              placeholder="Locatie (optioneel)"
-              value={form.location}
-              onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
-            />
-            <button
-              onClick={() => void save()}
-              disabled={saving || !form.summary || !form.start}
-              className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm transition active:scale-95"
-            >
+            <input className="w-full bg-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-cyan-500" placeholder="Locatie (optioneel)" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
+            <button onClick={() => void save()} disabled={saving || !form.summary || !form.start} className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm transition active:scale-95">
               {saving ? t.saving : t.calendarAdd}
             </button>
           </div>
         )}
 
-        {/* Event list */}
         {loading ? (
           <div className="space-y-2">
             {[1, 2, 3].map(i => (
@@ -145,6 +122,14 @@ export default function CalendarClient() {
                 <div className="h-3 bg-slate-700 rounded w-2/3" />
               </div>
             ))}
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center py-12 text-slate-600 gap-3">
+            <AlertCircle size={32} className="opacity-40" />
+            <p className="text-sm">Agenda niet beschikbaar</p>
+            <button onClick={load} className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm transition">
+              <RefreshCw size={14} />{t.errorRetry}
+            </button>
           </div>
         ) : groups.length === 0 ? (
           <div className="flex flex-col items-center py-12 text-slate-600">
@@ -167,15 +152,13 @@ export default function CalendarClient() {
                       <div className="flex items-center gap-3 mt-1">
                         {!ev.allDay && (
                           <div className="flex items-center gap-1 text-xs text-slate-500">
-                            <Clock size={11} />
-                            <span>{formatTime(ev.start)}</span>
+                            <Clock size={11} /><span>{formatTime(ev.start)}</span>
                           </div>
                         )}
                         {ev.allDay && <span className="text-xs text-slate-500">{t.calendarAllDay}</span>}
                         {ev.location && (
                           <div className="flex items-center gap-1 text-xs text-slate-500 truncate">
-                            <MapPin size={11} />
-                            <span className="truncate">{ev.location}</span>
+                            <MapPin size={11} /><span className="truncate">{ev.location}</span>
                           </div>
                         )}
                       </div>

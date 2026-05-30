@@ -6,6 +6,7 @@ import { Settings, Shield, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { useT, useLang } from '../LangContext';
 import type { Lang } from '../lang';
+import { useApiRequest } from '@/hooks/use-api-request';
 
 interface Preferences {
   signal_doc_notify: boolean;
@@ -20,54 +21,41 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative w-12 h-6 rounded-full transition-colors shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${
-        checked ? 'bg-cyan-500' : 'bg-slate-600'
-      }`}
+      className={`relative w-12 h-6 rounded-full transition-colors shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 ${checked ? 'bg-cyan-500' : 'bg-slate-600'}`}
     >
-      <span
-        className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${
-          checked ? 'translate-x-6' : 'translate-x-0'
-        }`}
-      />
+      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${checked ? 'translate-x-6' : 'translate-x-0'}`} />
     </button>
   );
 }
 
-export default function ProfileTab({
-  username,
-  email,
-  isAdmin,
-}: {
-  username: string;
-  email: string;
-  isAdmin: boolean;
-}) {
+function FieldSkeleton() {
+  return (
+    <div className="animate-pulse space-y-2">
+      <div className="h-2.5 bg-slate-700 rounded w-1/3" />
+      <div className="h-10 bg-slate-700/50 rounded-xl w-full" />
+    </div>
+  );
+}
+
+export default function ProfileTab({ username, email, isAdmin }: { username: string; email: string; isAdmin: boolean }) {
   const t = useT();
+  const { request } = useApiRequest();
   const [, setLang] = useLang();
-  const [prefs, setPrefs] = useState<Preferences>({
-    signal_doc_notify: true,
-    signal_digest_mode: false,
-    language: 'nl',
-  });
+  const [prefs, setPrefs] = useState<Preferences>({ signal_doc_notify: true, signal_digest_mode: false, language: 'nl' });
   const [saving, setSaving] = useState(false);
   const [ldapAttrs, setLdapAttrs] = useState({ signalPhone: '', defaultArchivePath: '' });
   const [ldapSaving, setLdapSaving] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/me/preferences')
-      .then(r => r.ok ? r.json() : null)
-      .then((d: Preferences | null) => { if (d) setPrefs(d); })
-      .catch(() => {});
-    fetch('/api/me/ldap-profile')
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { signalPhone?: string; defaultArchivePath?: string } | null) => {
-        if (d) setLdapAttrs({
-          signalPhone: d.signalPhone ?? '',
-          defaultArchivePath: d.defaultArchivePath ?? '',
-        });
-      })
-      .catch(() => {});
-  }, []);
+    Promise.all([
+      request<Preferences>('/api/me/preferences').catch(() => null),
+      request<{ signalPhone?: string; defaultArchivePath?: string }>('/api/me/ldap-profile').catch(() => null),
+    ]).then(([prefsData, ldapData]) => {
+      if (prefsData) setPrefs(prefsData);
+      if (ldapData) setLdapAttrs({ signalPhone: ldapData.signalPhone ?? '', defaultArchivePath: ldapData.defaultArchivePath ?? '' });
+    }).finally(() => setProfileLoading(false));
+  }, [request]);
 
   async function saveLdapAttrs() {
     setLdapSaving(true);
@@ -112,28 +100,35 @@ export default function ProfileTab({
               {saving && <span className="text-cyan-400 text-[10px] normal-case tracking-normal ml-1">{t.saving}</span>}
             </h3>
           </div>
-          <div className="divide-y divide-slate-700/50">
-            <div className="px-4 py-3.5 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm text-slate-200">{t.prefSignalNotify}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{t.prefSignalNotifyDesc}</p>
+          {profileLoading ? (
+            <div className="px-4 pb-4 space-y-3">
+              <div className="animate-pulse flex items-center justify-between py-2">
+                <div className="space-y-1.5"><div className="h-3 bg-slate-700 rounded w-32" /><div className="h-2.5 bg-slate-700/50 rounded w-48" /></div>
+                <div className="w-12 h-6 bg-slate-700 rounded-full" />
               </div>
-              <Toggle
-                checked={prefs.signal_doc_notify}
-                onChange={v => updatePref('signal_doc_notify', v)}
-              />
-            </div>
-            <div className="px-4 py-3.5 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm text-slate-200">{t.prefDigest}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{t.prefDigestDesc}</p>
+              <div className="animate-pulse flex items-center justify-between py-2">
+                <div className="space-y-1.5"><div className="h-3 bg-slate-700 rounded w-28" /><div className="h-2.5 bg-slate-700/50 rounded w-40" /></div>
+                <div className="w-12 h-6 bg-slate-700 rounded-full" />
               </div>
-              <Toggle
-                checked={prefs.signal_digest_mode}
-                onChange={v => updatePref('signal_digest_mode', v)}
-              />
             </div>
-          </div>
+          ) : (
+            <div className="divide-y divide-slate-700/50">
+              <div className="px-4 py-3.5 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm text-slate-200">{t.prefSignalNotify}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{t.prefSignalNotifyDesc}</p>
+                </div>
+                <Toggle checked={prefs.signal_doc_notify} onChange={v => updatePref('signal_doc_notify', v)} />
+              </div>
+              <div className="px-4 py-3.5 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm text-slate-200">{t.prefDigest}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{t.prefDigestDesc}</p>
+                </div>
+                <Toggle checked={prefs.signal_digest_mode} onChange={v => updatePref('signal_digest_mode', v)} />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Language */}
@@ -142,15 +137,19 @@ export default function ProfileTab({
             <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.sectionLanguage}</h3>
           </div>
           <div className="px-4 pb-4">
-            <select
-              value={prefs.language}
-              onChange={e => updatePref('language', e.target.value as Preferences['language'])}
-              className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600/50 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-cyan-500 transition appearance-none"
-            >
-              <option value="nl">🇳🇱 Nederlands</option>
-              <option value="de">🇩🇪 Deutsch</option>
-              <option value="en">🇬🇧 English</option>
-            </select>
+            {profileLoading ? (
+              <div className="h-10 bg-slate-700/50 rounded-xl animate-pulse" />
+            ) : (
+              <select
+                value={prefs.language}
+                onChange={e => updatePref('language', e.target.value as Preferences['language'])}
+                className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600/50 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-cyan-500 transition appearance-none"
+              >
+                <option value="nl">🇳🇱 Nederlands</option>
+                <option value="de">🇩🇪 Deutsch</option>
+                <option value="en">🇬🇧 English</option>
+              </select>
+            )}
           </div>
         </div>
 
@@ -163,42 +162,31 @@ export default function ProfileTab({
             </h3>
           </div>
           <div className="px-4 pb-4 space-y-3">
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">Signal telefoonnummer</label>
-              <input
-                type="tel"
-                value={ldapAttrs.signalPhone}
-                onChange={e => setLdapAttrs(prev => ({ ...prev, signalPhone: e.target.value }))}
-                placeholder="+316xxxxxxxx"
-                className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600/50 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-cyan-500 transition"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 block mb-1">Standaard archiefpad</label>
-              <input
-                type="text"
-                value={ldapAttrs.defaultArchivePath}
-                onChange={e => setLdapAttrs(prev => ({ ...prev, defaultArchivePath: e.target.value }))}
-                placeholder="/archive/gebruikersnaam"
-                className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600/50 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-cyan-500 transition"
-              />
-            </div>
-            <button
-              onClick={saveLdapAttrs}
-              disabled={ldapSaving}
-              className="w-full py-2.5 bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 rounded-xl text-sm font-medium hover:bg-cyan-500/30 transition disabled:opacity-50"
-            >
-              Opslaan
-            </button>
+            {profileLoading ? (
+              <>
+                <FieldSkeleton />
+                <FieldSkeleton />
+              </>
+            ) : (
+              <>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Signal telefoonnummer</label>
+                  <input type="tel" value={ldapAttrs.signalPhone} onChange={e => setLdapAttrs(prev => ({ ...prev, signalPhone: e.target.value }))} placeholder="+316xxxxxxxx" className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600/50 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-cyan-500 transition" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Standaard archiefpad</label>
+                  <input type="text" value={ldapAttrs.defaultArchivePath} onChange={e => setLdapAttrs(prev => ({ ...prev, defaultArchivePath: e.target.value }))} placeholder="/archive/gebruikersnaam" className="w-full px-3 py-2.5 bg-slate-700 border border-slate-600/50 rounded-xl text-sm text-slate-100 focus:outline-none focus:border-cyan-500 transition" />
+                </div>
+                <button onClick={saveLdapAttrs} disabled={ldapSaving} className="w-full py-2.5 bg-cyan-500/20 border border-cyan-500/30 text-cyan-400 rounded-xl text-sm font-medium hover:bg-cyan-500/30 transition disabled:opacity-50">
+                  Opslaan
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Admin link — only for admins */}
         {isAdmin && (
-          <Link
-            href="/admin"
-            className="flex items-center gap-3 bg-slate-800 rounded-2xl p-4 hover:bg-slate-700/80 active:scale-[0.98] transition"
-          >
+          <Link href="/admin" className="flex items-center gap-3 bg-slate-800 rounded-2xl p-4 hover:bg-slate-700/80 active:scale-[0.98] transition">
             <div className="w-10 h-10 bg-orange-500/10 rounded-xl flex items-center justify-center shrink-0">
               <Shield size={18} className="text-orange-400" />
             </div>
@@ -210,7 +198,6 @@ export default function ProfileTab({
           </Link>
         )}
 
-        {/* Logout */}
         <a
           href={process.env.NEXT_PUBLIC_LOGOUT_URL ?? '/outpost.goauthentik.io/sign_out'}
           className="flex items-center gap-3 bg-red-950/60 border border-red-900/50 rounded-2xl p-4 hover:bg-red-900/50 active:scale-[0.98] transition"
@@ -221,7 +208,6 @@ export default function ProfileTab({
           <p className="text-sm font-semibold text-red-300">{t.logout}</p>
         </a>
 
-        {/* Spacer for safe area */}
         <div className="h-4" />
       </div>
     </div>

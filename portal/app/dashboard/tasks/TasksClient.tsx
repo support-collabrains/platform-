@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { CheckCircle2, Trash2, Clock, AlertCircle, PlusCircle } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2, Trash2, Clock, AlertCircle, PlusCircle, RefreshCw } from 'lucide-react';
 import { useT } from '../LangContext';
+import { useApiRequest } from '@/hooks/use-api-request';
 
 interface Ticket {
   id: string;
@@ -24,23 +25,28 @@ function dueLabel(dueDate: string | null): { text: string; color: string } | nul
 
 export default function TasksClient() {
   const t = useT();
+  const { request } = useApiRequest();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [done, setDone] = useState<Ticket[]>([]);
   const [tab, setTab] = useState<'open' | 'done'>('open');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setLoading(true);
+    setLoadError(false);
     Promise.all([
-      fetch('/api/me/tickets').then(r => r.ok ? r.json() : { tickets: [] }),
-      fetch('/api/me/tickets?status=done').then(r => r.ok ? r.json() : { tickets: [] }),
+      request<{ tickets?: Ticket[] }>('/api/me/tickets').catch(() => ({ tickets: [] as Ticket[] })),
+      request<{ tickets?: Ticket[] }>('/api/me/tickets?status=done').catch(() => ({ tickets: [] as Ticket[] })),
     ]).then(([openData, doneData]) => {
-      setTickets((openData as { tickets?: Ticket[] }).tickets ?? []);
-      setDone((doneData as { tickets?: Ticket[] }).tickets ?? []);
+      setTickets(openData.tickets ?? []);
+      setDone(doneData.tickets ?? []);
+    }).catch(() => {
+      setLoadError(true);
     }).finally(() => setLoading(false));
-  };
+  }, [request]);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [load]);
 
   const markDone = async (id: string) => {
     await fetch(`/api/me/tickets/${id}`, {
@@ -63,7 +69,6 @@ export default function TasksClient() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 space-y-4">
-        {/* Overdue banner */}
         {overdue > 0 && (
           <div className="bg-red-950/40 border border-red-800/40 rounded-2xl px-4 py-3 flex items-center gap-3">
             <AlertCircle size={18} className="text-red-400 shrink-0" />
@@ -71,23 +76,15 @@ export default function TasksClient() {
           </div>
         )}
 
-        {/* Tabs */}
         <div className="flex bg-slate-800 rounded-2xl p-1">
-          <button
-            onClick={() => setTab('open')}
-            className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${tab === 'open' ? 'bg-slate-700 text-cyan-400' : 'text-slate-500'}`}
-          >
+          <button onClick={() => setTab('open')} className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${tab === 'open' ? 'bg-slate-700 text-cyan-400' : 'text-slate-500'}`}>
             {t.tasksOpen} {tickets.length > 0 && <span className="ml-1 text-xs bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded-full">{tickets.length}</span>}
           </button>
-          <button
-            onClick={() => setTab('done')}
-            className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${tab === 'done' ? 'bg-slate-700 text-slate-300' : 'text-slate-500'}`}
-          >
+          <button onClick={() => setTab('done')} className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${tab === 'done' ? 'bg-slate-700 text-slate-300' : 'text-slate-500'}`}>
             {t.tasksDone}
           </button>
         </div>
 
-        {/* Task list */}
         {loading ? (
           <div className="space-y-2">
             {[1, 2, 3].map(i => (
@@ -96,6 +93,14 @@ export default function TasksClient() {
                 <div className="h-2.5 bg-slate-700/50 rounded w-1/3" />
               </div>
             ))}
+          </div>
+        ) : loadError ? (
+          <div className="flex flex-col items-center py-12 text-slate-600 gap-3">
+            <AlertCircle size={32} className="opacity-40" />
+            <p className="text-sm">{t.errorServiceUnavailable}</p>
+            <button onClick={load} className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm transition">
+              <RefreshCw size={14} />{t.errorRetry}
+            </button>
           </div>
         ) : current.length === 0 ? (
           <div className="flex flex-col items-center py-12 text-slate-600">
@@ -109,16 +114,11 @@ export default function TasksClient() {
               const due = dueLabel(tk.dueDate);
               const isOverdue = tk.dueDate && tk.dueDate < today && tk.status === 'open';
               return (
-                <div
-                  key={tk.id}
-                  className={`bg-slate-800 rounded-2xl p-4 border-l-2 ${isOverdue ? 'border-l-red-500' : tk.dueDate === today ? 'border-l-orange-500' : 'border-l-transparent'}`}
-                >
+                <div key={tk.id} className={`bg-slate-800 rounded-2xl p-4 border-l-2 ${isOverdue ? 'border-l-red-500' : tk.dueDate === today ? 'border-l-orange-500' : 'border-l-transparent'}`}>
                   <div className="flex items-start gap-3">
                     <span className="text-xs font-mono text-slate-600 mt-0.5 shrink-0">#{tk.seq}</span>
                     <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium ${tk.status === 'done' ? 'line-through text-slate-500' : 'text-slate-100'} truncate`}>
-                        {tk.title}
-                      </p>
+                      <p className={`text-sm font-medium ${tk.status === 'done' ? 'line-through text-slate-500' : 'text-slate-100'} truncate`}>{tk.title}</p>
                       {due && (
                         <div className={`flex items-center gap-1 mt-1 text-xs ${due.color}`}>
                           <Clock size={11} />
@@ -128,18 +128,10 @@ export default function TasksClient() {
                     </div>
                     {tk.status === 'open' && (
                       <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          onClick={() => void markDone(tk.id)}
-                          className="text-green-400 hover:text-green-300 active:scale-90 transition"
-                          title={t.tasksMarkDone}
-                        >
+                        <button onClick={() => void markDone(tk.id)} className="text-green-400 hover:text-green-300 active:scale-90 transition" title={t.tasksMarkDone}>
                           <CheckCircle2 size={20} />
                         </button>
-                        <button
-                          onClick={() => void del(tk.id)}
-                          className="text-slate-600 hover:text-red-400 active:scale-90 transition"
-                          title={t.tasksDelete}
-                        >
+                        <button onClick={() => void del(tk.id)} className="text-slate-600 hover:text-red-400 active:scale-90 transition" title={t.tasksDelete}>
                           <Trash2 size={16} />
                         </button>
                       </div>
@@ -151,7 +143,6 @@ export default function TasksClient() {
           </div>
         )}
 
-        {/* Signal hint */}
         {tab === 'open' && tickets.length > 0 && (
           <div className="flex items-center gap-2 text-slate-700 text-xs pt-2">
             <PlusCircle size={14} />

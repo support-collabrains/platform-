@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Home, Mail, FileText, User, CheckSquare } from 'lucide-react';
 import { LangContext } from './LangContext';
 import { translations, type Lang } from './lang';
+import { useApiRequest } from '@/hooks/use-api-request';
 
 interface Props {
   children: React.ReactNode;
@@ -27,26 +28,25 @@ export default function AppShell({ children, username }: Props) {
   const [unreadMail, setUnreadMail] = useState(0);
   const [openTasks, setOpenTasks] = useState(0);
   const [lang, setLang] = useState<Lang>('nl');
+  const { request } = useApiRequest();
 
   useEffect(() => {
-    fetch('/api/me/mail/stats')
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { unread?: number } | null) => { if (d?.unread != null) setUnreadMail(d.unread); })
+    // Badge counts — silently ignore errors (non-critical UI)
+    request<{ unread?: number }>('/api/me/mail/stats')
+      .then(d => { if (d?.unread != null) setUnreadMail(d.unread); })
       .catch(() => {});
-    fetch('/api/me/tickets')
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { tickets?: unknown[] } | null) => { if (d?.tickets != null) setOpenTasks(d.tickets.length); })
+    request<{ tickets?: unknown[] }>('/api/me/tickets')
+      .then(d => { if (d?.tickets != null) setOpenTasks(d.tickets.length); })
       .catch(() => {});
-  }, []);
+  }, [request]);
 
   useEffect(() => {
-    fetch('/api/me/preferences')
-      .then(r => r.ok ? r.json() : null)
-      .then((d: { language?: string } | null) => {
+    request<{ language?: string }>('/api/me/preferences')
+      .then(d => {
         if (d?.language && ['nl', 'de', 'en'].includes(d.language)) setLang(d.language as Lang);
       })
       .catch(() => {});
-  }, []);
+  }, [request]);
 
   const t = translations[lang] ?? translations.nl;
 

@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Bell, CheckCircle, Clock, XCircle, Calendar, Camera } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Bell, CheckCircle, Clock, XCircle, Calendar, Camera, RefreshCw, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useT } from './LangContext';
+import { useApiRequest } from '@/hooks/use-api-request';
 
 interface Notification {
   id: string;
@@ -21,12 +22,14 @@ interface CalEvent {
 
 export default function HomeTab({ username }: { username: string }) {
   const t = useT();
+  const { request } = useApiRequest();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [docCount, setDocCount] = useState(0);
   const [unreadMail, setUnreadMail] = useState(0);
   const [openTasks, setOpenTasks] = useState(0);
   const [todayEvents, setTodayEvents] = useState<CalEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
 
   const STATUS_CONFIG = {
     done:       { label: t.statusDone,       color: 'text-green-400',  border: 'border-l-green-500',  Icon: CheckCircle },
@@ -53,26 +56,48 @@ export default function HomeTab({ username }: { username: string }) {
     catch { return ''; }
   }
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setLoadError(false);
     const today = new Date().toISOString().slice(0, 10);
     const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
     Promise.all([
-      fetch('/api/me/notifications').then(r => r.ok ? r.json() : { notifications: [] }),
-      fetch('/api/me/documents').then(r => r.ok ? r.json() : { docs: [] }),
-      fetch('/api/me/mail/stats').then(r => r.ok ? r.json() : { unread: 0 }),
-      fetch('/api/me/tickets').then(r => r.ok ? r.json() : { tickets: [] }),
-      fetch(`/api/me/calendar/events?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(tomorrow)}`).then(r => r.ok ? r.json() : { events: [] }),
+      request<{ notifications?: Notification[] }>('/api/me/notifications').catch(() => ({ notifications: [] as Notification[] })),
+      request<{ docs?: unknown[] }>('/api/me/documents').catch(() => ({ docs: [] })),
+      request<{ unread?: number }>('/api/me/mail/stats').catch(() => ({ unread: 0 })),
+      request<{ tickets?: unknown[] }>('/api/me/tickets').catch(() => ({ tickets: [] })),
+      request<{ events?: CalEvent[] }>(`/api/me/calendar/events?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(tomorrow)}`).catch(() => ({ events: [] as CalEvent[] })),
     ]).then(([notifData, docsData, mailData, ticketsData, calData]) => {
-      setNotifications((notifData as { notifications?: Notification[] }).notifications ?? []);
-      setDocCount(((docsData as { docs?: unknown[] }).docs ?? []).length);
-      setUnreadMail((mailData as { unread?: number }).unread ?? 0);
-      setOpenTasks(((ticketsData as { tickets?: unknown[] }).tickets ?? []).length);
-      const allEvents = (calData as { events?: CalEvent[] }).events ?? [];
+      setNotifications(notifData.notifications ?? []);
+      setDocCount((docsData.docs ?? []).length);
+      setUnreadMail(mailData.unread ?? 0);
+      setOpenTasks((ticketsData.tickets ?? []).length);
+      const allEvents = calData.events ?? [];
       setTodayEvents(allEvents.filter(ev => ev.start.slice(0, 10) === today));
+    }).catch(() => {
+      setLoadError(true);
     }).finally(() => setLoading(false));
-  }, []);
+  }, [request]);
+
+  useEffect(() => { load(); }, [load]);
 
   const pending = notifications.filter(n => n.status !== 'done' && n.status !== 'failed').length;
+
+  if (loadError) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-4 p-8">
+        <AlertCircle size={36} className="text-red-400 opacity-60" />
+        <p className="text-sm text-slate-400">{t.errorLoading}</p>
+        <button
+          onClick={load}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm transition"
+        >
+          <RefreshCw size={14} />
+          {t.errorRetry}
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto">
@@ -83,7 +108,7 @@ export default function HomeTab({ username }: { username: string }) {
           <p className="text-sm text-slate-500 mt-0.5">{t.overview}</p>
         </div>
 
-        {/* Stats row — 4 tiles */}
+        {/* Stats row */}
         <div className="grid grid-cols-2 gap-3">
           <Link href="/dashboard/docs" className="bg-slate-800 rounded-2xl p-4 text-center hover:bg-slate-700/80 active:scale-95 transition">
             <div className="text-2xl font-bold text-cyan-400">{loading ? '—' : docCount}</div>
@@ -103,36 +128,39 @@ export default function HomeTab({ username }: { username: string }) {
           </div>
         </div>
 
-        {/* Today's agenda */}
-        {(loading || todayEvents.length > 0) && (
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.calendarToday}</h3>
-              <Link href="/dashboard/calendar" className="text-xs text-cyan-500 hover:text-cyan-400">
-                <Calendar size={14} />
-              </Link>
-            </div>
-            {loading ? (
-              <div className="bg-slate-800 rounded-2xl p-4 animate-pulse">
-                <div className="h-3 bg-slate-700 rounded w-1/2" />
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {todayEvents.map(ev => (
-                  <Link href="/dashboard/calendar" key={ev.uid} className="flex items-center gap-3 bg-slate-800 rounded-2xl p-3 hover:bg-slate-700/80 transition">
-                    <div className="w-1 self-stretch bg-cyan-500 rounded-full shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-100 truncate">{ev.summary}</p>
-                      <p className="text-xs text-slate-500">{formatEventTime(ev)}</p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
+        {/* Today's agenda — always show section */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{t.calendarToday}</h3>
+            <Link href="/dashboard/calendar" className="text-xs text-cyan-500 hover:text-cyan-400">
+              <Calendar size={14} />
+            </Link>
           </div>
-        )}
+          {loading ? (
+            <div className="bg-slate-800 rounded-2xl p-4 animate-pulse">
+              <div className="h-3 bg-slate-700 rounded w-1/2" />
+            </div>
+          ) : todayEvents.length === 0 ? (
+            <div className="bg-slate-800/50 rounded-2xl p-4 flex items-center gap-3 text-slate-600">
+              <Calendar size={16} className="opacity-40" />
+              <span className="text-sm">{t.calendarNoEvents}</span>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {todayEvents.map(ev => (
+                <Link href="/dashboard/calendar" key={ev.uid} className="flex items-center gap-3 bg-slate-800 rounded-2xl p-3 hover:bg-slate-700/80 transition">
+                  <div className="w-1 self-stretch bg-cyan-500 rounded-full shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-100 truncate">{ev.summary}</p>
+                    <p className="text-xs text-slate-500">{formatEventTime(ev)}</p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
 
-        {/* Quick links — Calendar & Photos */}
+        {/* Quick links */}
         <div className="grid grid-cols-2 gap-3">
           <Link href="/dashboard/calendar" className="bg-slate-800 rounded-2xl p-4 flex flex-col items-center gap-2 hover:bg-slate-700/80 active:scale-95 transition">
             <Calendar size={24} className="text-sky-400" />

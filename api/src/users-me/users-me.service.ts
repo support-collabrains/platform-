@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import axios from 'axios';
+import type { AxiosResponse } from 'axios';
 import { DocDocument, DocNotification } from '../documents/document.entity';
 import { ADMIN_GROUP } from '../common/roles.guard';
 
@@ -84,9 +85,52 @@ export class UsersMeService {
         params: { owner__username: username, ordering: '-created', page_size: 100 },
         timeout: 10_000,
       });
-      return (data.results as PaperlessDoc[]) ?? [];
+      const paperlessDocs = (data.results as PaperlessDoc[]) ?? [];
+
+      // Cross-check: exclude any doc our DB attributes to a DIFFERENT user.
+      // Paperless admin token may ignore ownership filters; local DB is authoritative
+      // for documents that came through the post-consume webhook (incl. scan@).
+      if (paperlessDocs.length === 0) return [];
+      const ids = paperlessDocs.map((d) => d.id);
+      const wrongOwner = await this.docRepo.find({
+        where: { paperlessId: In(ids), owner: Not(username) },
+        select: { paperlessId: true },
+      });
+      const excluded = new Set(wrongOwner.map((d) => d.paperlessId));
+      return paperlessDocs.filter((d) => !excluded.has(d.id));
     } catch {
       return [];
+    }
+  }
+
+  async getDocumentById(paperlessId: number, username: string): Promise<PaperlessDoc | null> {
+    // Ownership check: must be in local DB as this user's doc, OR Paperless owner matches
+    const local = await this.docRepo.findOne({ where: { paperlessId } });
+    if (local && local.owner !== username) return null;
+
+    try {
+      const { data } = await axios.get(`${this.paperlessUrl}/api/documents/${paperlessId}/`, {
+        headers: { Authorization: `Token ${this.paperlessToken}` },
+        timeout: 10_000,
+      });
+      return data as PaperlessDoc;
+    } catch {
+      return null;
+    }
+  }
+
+  async getDocumentPreview(paperlessId: number, username: string): Promise<AxiosResponse<Buffer> | null> {
+    const local = await this.docRepo.findOne({ where: { paperlessId } });
+    if (local && local.owner !== username) return null;
+
+    try {
+      return await axios.get<Buffer>(`${this.paperlessUrl}/api/documents/${paperlessId}/preview/`, {
+        headers: { Authorization: `Token ${this.paperlessToken}` },
+        responseType: 'arraybuffer',
+        timeout: 30_000,
+      });
+    } catch {
+      return null;
     }
   }
 

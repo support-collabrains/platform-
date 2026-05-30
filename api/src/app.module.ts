@@ -20,6 +20,7 @@ import { LdapModule } from './ldap/ldap.module';
 import { PushModule } from './push/push.module';
 import { PushSubscription } from './push/push-subscription.entity';
 import { GatewayModule } from './gateway/gateway.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { GatewayModule } from './gateway/gateway.module';
     CalendarModule,
     PushModule,
     GatewayModule,
+    AiModule,
   ],
 })
 export class AppModule {}

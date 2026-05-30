@@ -81,7 +81,7 @@ export default function Home() {
       <div className="w-full max-w-xl">
         <div className="text-center mb-8">
           <div className="flex justify-center mb-3">
-            <Logo width={140} height={70} />
+            <Logo size="lg" />
           </div>
           <p className="text-slate-500 text-sm">Self-hosted control plane</p>
         </div>

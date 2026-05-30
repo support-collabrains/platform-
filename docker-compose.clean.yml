@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15
+    restart: unless-stopped
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: paperless
+      POSTGRES_USER: paperless
+      POSTGRES_PASSWORD: paperless
+    networks:
+      - paperless-net
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    networks:
+      - paperless-net
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      - ./consume:/usr/src/paperless/consume
+    environment:
+      PAPERLESS_URL: http://localhost:8000
+      PAPERLESS_DISABLE_REGULAR_LOGIN: "false"
+      PAPERLESS_REDIRECT_LOGIN_TO_SSO: "false"
+      PAPERLESS_SECRET_KEY: "een_geheime_sleutel"
+      PAPERLESS_DBENGINE: postgresql
+      PAPERLESS_DBHOST: db
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBUSER: paperless
+      PAPERLESS_DBPASS: paperless
+      PAPERLESS_REDIS: redis://redis:6379
+      USERMAP_UID: 1000
+      USERMAP_GID: 1000
+    depends_on:
+      - db
+      - redis
+    networks:
+      - paperless-net
+
+volumes:
+  db_data:
+    external: true
+    name: platform_db_data   # pas aan naar jouw bestaande volume naam
+  paperless_data:
+    external: true
+    name: platform_paperless_data
+  paperless_media:
+    external: true
+    name: platform_paperless_media
+
+networks:
+  paperless-net:
+    driver: bridge

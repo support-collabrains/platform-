@@ -67,4 +67,13 @@ export class MailController {
   ) {
     return this.imap.setVacation(uid, body.active, body.subject ?? '', body.body ?? '');
   }
+
+  @Post('send')
+  @HttpCode(204)
+  async send(
+    @Headers('x-authentik-username') uid: string,
+    @Body() body: { to: string; subject: string; body: string },
+  ) {
+    await this.imap.sendMail(uid, body.to, body.subject, body.body);
+  }
 }

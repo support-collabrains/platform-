@@ -1,0 +1,499 @@
+# Production-only. No mock services, no dev shortcuts.
+# Requires Docker Compose CLI v2.20+ for include: support.
+
+include:
+  - path: ./core/mailcow/docker-compose.yml
+    # Merges Traefik labels + platform network attachment onto nginx-mailcow.
+    merge:
+      - ./core/mailcow/traefik.override.yml
+
+networks:
+  platform:
+    # Named explicitly so the mailcow override can reference it as external.
+    name: platform
+    driver: bridge
+
+volumes:
+  db_data:
+  authentik_data:
+  authentik_media:
+  authentik_certs:
+  traefik_certs:
+  paperless_data:
+  paperless_media:
+  signal_data:
+  backup_data:
+  ollama_data:
+  radicale_data:
+  immich_data:
+  immich_db_data:
+
+services:
+
+  # ── Traefik ─────────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:latest
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      # Docker 27+ requires API >= 1.40; Traefik's client defaults to 1.24.
+      - DOCKER_API_VERSION="1.41"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/traefik:/etc/traefik:ro
+      - traefik_certs:/letsencrypt
+    networks:
+      - platform
+      # Join mailcow's network so Traefik can reach nginx-mailcow directly.
+      # The network name matches what mailcow-dockerized creates by default.
+      - mailcow-network
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - POSTGRES_DB=platform
+      - POSTGRES_USER=platform
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Platform API (NestJS) ────────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://platform:${DB_PASSWORD}@db:5432/platform
+      - PORTAL_ORIGIN=https://portal.${PRIMARY_DOMAIN:?PRIMARY_DOMAIN required}
+      - AUTHENTIK_URL=http://authentik-server:9000
+      - AUTHENTIK_BOOTSTRAP_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN}
+      - MAILCOW_URL=http://nginx-mailcow:8080
+      - MAILCOW_API_KEY=${MAILCOW_API_KEY:-}
+      - MAILCOW_DB_HOST=mysql-mailcow
+      - MAILCOW_DB_NAME=mailcow
+      - MAILCOW_DB_USER=mailcow
+      - MAILCOW_DB_PASS=${MAILCOW_DB_PASS:-}
+      - TRAEFIK_CONFIG_DIR=/etc/traefik-dynamic
+      - PRIMARY_DOMAIN=${PRIMARY_DOMAIN}
+      - MAIL_DOMAIN=${MAIL_DOMAIN}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - TIMEZONE=${TIMEZONE:-UTC}
+      - PAPERLESS_INTERNAL_URL=http://paperless:8000
+      - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+      - PAPERLESS_DATA_DIR=/data/paperless
+      - AUTHENTIK_WEBHOOK_SECRET=${AUTHENTIK_WEBHOOK_SECRET}
+      - SIGNAL_API_URL=http://signal-api:8080
+      - SIGNAL_SENDER=${SIGNAL_SENDER}
+      - SIGNAL_RECIPIENT=${SIGNAL_RECIPIENT}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - QUEUE_REDIS_URL=redis://queue-redis:6379
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - IMMICH_INTERNAL_URL=http://immich-server:2283
+      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+    volumes:
+      - ./config/traefik:/etc/traefik-dynamic
+      - ./data/paperless:/data/paperless
+    depends_on:
+      db:
+        condition: service_healthy
+      signal-api:
+        condition: service_started
+      queue-redis:
+        condition: service_started
+    networks:
+      - platform
+      # Needs mailcow-network to call Mailcow's API during provisioning.
+      - mailcow-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.api.rule=Host(`portal.${PRIMARY_DOMAIN}`) && PathPrefix(`/api`) && !PathPrefix(`/api/admin`) && !PathPrefix(`/api/me`)"
+      - "traefik.http.routers.api.entrypoints=websecure"
+      - "traefik.http.routers.api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.api.middlewares=api-strip"
+      - "traefik.http.middlewares.api-strip.stripprefix.prefixes=/api"
+      - "traefik.http.services.api.loadbalancer.server.port=3001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Platform Portal (Next.js) ────────────────────────────────────────────
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - NEXT_PUBLIC_API_URL=https://portal.${PRIMARY_DOMAIN}/api
+      - NEXT_PUBLIC_LOGOUT_URL=https://auth.${PRIMARY_DOMAIN}/if/session-end/collaBrains/
+      - INTERNAL_API_URL=http://api:3001
+      - AUTHENTIK_WEBHOOK_SECRET=${AUTHENTIK_WEBHOOK_SECRET}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+    depends_on: [api]
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      # Protected portal (requires Authentik login)
+      - "traefik.http.routers.portal.rule=Host(`portal.${PRIMARY_DOMAIN}`) && !Path(`/logo.svg`)"
+      - "traefik.http.routers.portal.entrypoints=websecure"
+      - "traefik.http.routers.portal.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portal.middlewares=authentik-forward@docker"
+      - "traefik.http.services.portal.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.authentik-forward.forwardauth.address=http://authentik-server:9000/outpost.goauthentik.io/auth/traefik"
+      - "traefik.http.middlewares.authentik-forward.forwardauth.trustForwardHeader=true"
+      - "traefik.http.middlewares.authentik-forward.forwardauth.authResponseHeaders=X-authentik-username,X-authentik-groups,X-authentik-email,X-authentik-name,X-authentik-uid"
+      # Public assets (no auth required — logo + Next.js static chunks)
+      - "traefik.http.routers.portal-public.rule=Host(`portal.${PRIMARY_DOMAIN}`) && (Path(`/logo.svg`) || PathPrefix(`/_next/static/`) || PathPrefix(`/_next/image`))"
+      - "traefik.http.routers.portal-public.entrypoints=websecure"
+      - "traefik.http.routers.portal-public.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portal-public.service=portal"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Authentik ────────────────────────────────────────────────────────────
+  postgresql-authentik:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - POSTGRES_DB=authentik
+      - POSTGRES_USER=authentik
+      - POSTGRES_PASSWORD=${AUTHENTIK_DB_PASSWORD:?AUTHENTIK_DB_PASSWORD required}
+    volumes:
+      - authentik_data:/var/lib/postgresql/data
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-authentik:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.6
+    restart: unless-stopped
+    command: server
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - AUTHENTIK_REDIS__HOST=redis-authentik
+      - AUTHENTIK_POSTGRESQL__HOST=postgresql-authentik
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY required}
+      - AUTHENTIK_BOOTSTRAP_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN:?required}
+      - AUTHENTIK_BOOTSTRAP_EMAIL=${ADMIN_EMAIL:?ADMIN_EMAIL required}
+      - AUTHENTIK_BOOTSTRAP_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD required}
+    ports:
+      - "389:3389"
+      - "636:6636"
+    volumes:
+      - authentik_media:/media
+      - authentik_certs:/certs
+      - ./config/authentik-custom.css:/web/dist/custom.css:ro
+    depends_on:
+      postgresql-authentik:
+        condition: service_healthy
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.authentik.rule=Host(`auth.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.authentik.entrypoints=websecure"
+      - "traefik.http.routers.authentik.tls.certresolver=letsencrypt"
+      - "traefik.http.services.authentik.loadbalancer.server.port=9000"
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.6
+    restart: unless-stopped
+    command: worker
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - AUTHENTIK_REDIS__HOST=redis-authentik
+      - AUTHENTIK_POSTGRESQL__HOST=postgresql-authentik
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY}
+    volumes:
+      - authentik_media:/media
+      - authentik_certs:/certs
+    depends_on: [authentik-server]
+    networks: [platform]
+
+  # ── Backup ──────────────────────────────────────────────────────────────
+  backup:
+    build:
+      context: .
+      dockerfile: config/backup.Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+      - ./core/mailcow/mailcow.conf
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - PGPASSWORD=${DB_PASSWORD}
+      - AUTHENTIK_DB_PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - BACKUP_DIR=/backups
+    volumes:
+      - ./scripts/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+      - paperless_media:/paperless_media:ro
+      - vmail-vol-1:/vmail:ro
+      - traefik_certs:/traefik_certs:ro
+      - signal_data:/signal_data:ro
+    entrypoint: ["/bin/sh", "-c", "echo '0 3 * * * /bin/sh /backup.sh >> /backups/backup.log 2>&1' | crontab - && crond -f -d 8"]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - platform
+      - mailcow-network
+
+  # ── Signal CLI REST API ──────────────────────────────────────────────────
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - MODE=native
+    volumes:
+      - signal_data:/home/.local/share/signal-cli
+    networks: [platform]
+
+  # ── Paperless-ngx ────────────────────────────────────────────────────────
+  paperless-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      paperless-redis:
+        condition: service_started
+    environment:
+      - PAPERLESS_DISABLE_REGULAR_LOGIN=false
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+
+      - PAPERLESS_REDIS=redis://paperless-redis:6379
+      - PAPERLESS_DBENGINE=postgresql
+      - PAPERLESS_DBHOST=db
+      - PAPERLESS_DBNAME=paperless
+      - PAPERLESS_DBUSER=platform
+      - PAPERLESS_DBPASS=${DB_PASSWORD}
+      - PAPERLESS_URL=https://docs.${PRIMARY_DOMAIN}
+      - PAPERLESS_SECRET_KEY=${PAPERLESS_SECRET_KEY}
+      - PAPERLESS_ADMIN_USER=admin
+      - PAPERLESS_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - PAPERLESS_ADMIN_MAIL=${ADMIN_EMAIL}
+      - PAPERLESS_TIME_ZONE=${TIMEZONE:-UTC}
+      - PAPERLESS_OCR_LANGUAGE=nld+deu+eng
+      - PAPERLESS_OCR_LANGUAGES=nld
+      - PAPERLESS_OCR_MODE=skip
+      - PAPERLESS_CONSUMER_RECURSIVE="true"
+      - PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS="true"
+      - PAPERLESS_FILENAME_FORMAT="{{ owner_username }}/{{ document_type }}/{{ created_year }}/{{ title }}"
+      - USERMAP_UID="1000"
+      - USERMAP_GID="1000"
+      # Authentik OIDC SSO
+      - PAPERLESS_APPS=allauth.socialaccount.providers.openid_connect
+      - PAPERLESS_SOCIALACCOUNT_PROVIDERS=>
+        - {"openid_connect"={"APPS": [{"provider_id": "paperless-authentik", "name": "CollaBrains",
+        - "client_id"="${PAPERLESS_OIDC_CLIENT_ID}", "secret": "${PAPERLESS_OIDC_CLIENT_SECRET}",
+        - "settings"={"server_url": "https://auth.${PRIMARY_DOMAIN}/application/o/paperless-ngx/.well-known/openid-configuration",
+        - "token_auth_method"="client_secret_basic", "access_token_url": "https://auth.${PRIMARY_DOMAIN}/application/o/token/",
+        - "authorize_url"="https://auth.${PRIMARY_DOMAIN}/application/o/authorize/",
+        - "profile_url"="https://auth.${PRIMARY_DOMAIN}/application/o/userinfo/"}}]}}
+      - PAPERLESS_ACCOUNT_DEFAULT_HTTP_PROTOCOL=https
+      - PAPERLESS_SOCIAL_AUTO_SIGNUP="true"
+      - PAPERLESS_DISABLE_REGULAR_LOGIN="true"
+      - PAPERLESS_CSRF_TRUSTED_ORIGINS="https://docs.${PRIMARY_DOMAIN}"
+      - PAPERLESS_SOCIAL_ACCOUNT_ALLOW_REGISTRATION="true"
+      - PAPERLESS_POST_CONSUME_SCRIPT=/usr/src/paperless/scripts/post_consume.sh
+    volumes:
+      - paperless_data:/usr/src/paperless/data
+      - paperless_media:/usr/src/paperless/media
+      - ./data/paperless/export:/usr/src/paperless/export
+      - ./data/paperless/consume:/usr/src/paperless/consume
+      - ./scripts/paperless-post-consume.sh:/usr/src/paperless/scripts/post_consume.sh:ro
+    networks:
+      - platform
+      - mailcow-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.paperless.rule=Host(`docs.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.paperless.entrypoints=websecure"
+      - "traefik.http.routers.paperless.tls.certresolver=letsencrypt"
+      - "traefik.http.services.paperless.loadbalancer.server.port=8000"
+
+  # ── BullMQ Redis ─────────────────────────────────────────────────────────
+  queue-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Ollama (local LLM for document summaries) ────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:11434/api/tags 2>/dev/null || exit 0"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+
+  # ── paperless-gpt (AI auto-tagging via Ollama) ───────────────────────────
+  paperless-gpt:
+    image: ghcr.io/icereed/paperless-gpt:latest
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - PAPERLESS_BASE_URL=http://paperless:8000
+      - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+      - LLM_PROVIDER=ollama
+      - OLLAMA_HOST=http://ollama:11434
+      - LLM_MODEL=${OLLAMA_MODEL:-mistral}
+      - LLM_LANGUAGE="Dutch, German or English — use the same language as the document"
+      - MANUAL_TAG=paperless-gpt
+      - AUTO_PROCESS_DOCUMENTS="true"
+    depends_on:
+      - paperless
+      - ollama
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.paperless-gpt.rule=Host(`gpt.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.paperless-gpt.entrypoints=websecure"
+      - "traefik.http.routers.paperless-gpt.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.paperless-gpt.middlewares=authentik-forward@docker"
+      - "traefik.http.services.paperless-gpt.loadbalancer.server.port=8080"
+
+  # ── Radicale (CalDAV / CardDAV) ──────────────────────────────────────────
+  radicale:
+    image: tomsquest/docker-radicale:latest
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - RADICALE_CONFIG=/config/radicale.cfg
+    volumes:
+      - radicale_data:/data
+      - ./config/radicale.cfg:/config/radicale.cfg:ro
+    networks: [platform]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.radicale.rule=Host(`cal.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.radicale.entrypoints=websecure"
+      - "traefik.http.routers.radicale.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.radicale.middlewares=authentik-forward@docker"
+      - "traefik.http.services.radicale.loadbalancer.server.port=5232"
+
+  # ── Immich (foto-archief) ────────────────────────────────────────────────
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - DB_HOSTNAME=immich-db
+      - DB_USERNAME=immich
+      - DB_PASSWORD=${IMMICH_DB_PASS:-immich_secret}
+      - DB_DATABASE_NAME=immich
+      - REDIS_HOSTNAME=immich-redis
+      - UPLOAD_LOCATION=/usr/src/app/upload
+      - JWT_SECRET=${IMMICH_JWT_SECRET:-changeme_immich_jwt}
+      - IMMICH_SERVER_URL=https://fotos.${PRIMARY_DOMAIN}
+    volumes:
+      - immich_data:/usr/src/app/upload
+    depends_on:
+      - immich-db
+      - immich-redis
+    networks: [platform]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2283/api/server/ping 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=platform"
+      - "traefik.http.routers.immich.rule=Host(`fotos.${PRIMARY_DOMAIN}`)"
+      - "traefik.http.routers.immich.entrypoints=websecure"
+      - "traefik.http.routers.immich.tls.certresolver=letsencrypt"
+      - "traefik.http.services.immich.loadbalancer.server.port=2283"
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    restart: unless-stopped
+    volumes:
+      - immich_data:/cache
+    networks: [platform]
+
+  immich-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [platform]
+
+  immich-db:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0
+    restart: unless-stopped
+    environment:
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+      - POSTGRES_USER=immich
+      - POSTGRES_PASSWORD=${IMMICH_DB_PASS:-immich_secret}
+      - POSTGRES_DB=immich
+    volumes:
+      - immich_db_data:/var/lib/postgresql/data
+    networks: [platform]

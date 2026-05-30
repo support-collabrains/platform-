@@ -1,9 +1,9 @@
 // portal/app/dashboard/docs/page.tsx
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronRight, FileText, FolderOpen, Folder, Search, List, GitBranch, Tag, X, RefreshCw, AlertCircle } from 'lucide-react';
+import { ChevronRight, FileText, FolderOpen, Folder, Search, List, GitBranch, Tag, X, RefreshCw, AlertCircle, Upload, CheckCircle } from 'lucide-react';
 import { useT } from '../LangContext';
 import { useApiRequest } from '@/hooks/use-api-request';
 
@@ -87,6 +87,11 @@ export default function DocsPage() {
   const [view, setView] = useState<ViewMode>('list');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null);
+  const [showUpload, setShowUpload] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadDone, setUploadDone] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -106,6 +111,25 @@ export default function DocsPage() {
   }, [request]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleUpload(file: File) {
+    setUploading(true);
+    setUploadError('');
+    setUploadDone(false);
+    try {
+      const fd = new FormData();
+      fd.append('document', file);
+      fd.append('title', file.name.replace(/\.[^.]+$/, ''));
+      const res = await fetch('/api/me/documents/upload', { method: 'POST', body: fd });
+      if (!res.ok) throw new Error('Upload mislukt');
+      setUploadDone(true);
+      setTimeout(() => { setShowUpload(false); setUploadDone(false); load(); }, 1500);
+    } catch (e) {
+      setUploadError((e as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   const filtered = docs.filter(d => {
     const matchesQuery = d.title.toLowerCase().includes(query.toLowerCase());
@@ -214,6 +238,41 @@ export default function DocsPage() {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Upload modal */}
+      {showUpload && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl p-6 space-y-4"
+            style={{ background: 'var(--dc-surface)', border: '1px solid var(--dc-border)' }}>
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-slate-100">{t.docsUploadTitle}</h3>
+              <button onClick={() => setShowUpload(false)} className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-white/5 rounded-lg transition">
+                <X size={16} />
+              </button>
+            </div>
+            <input ref={fileRef} type="file" className="hidden"
+              accept=".pdf,.jpg,.jpeg,.png,.tiff,.gif,.webp,.bmp,.txt,.doc,.docx"
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
+            {uploadDone ? (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <CheckCircle size={40} className="text-green-400" />
+                <p className="text-sm text-slate-300">{t.docsUploadSuccess}</p>
+              </div>
+            ) : (
+              <button onClick={() => fileRef.current?.click()}
+                disabled={uploading}
+                className="w-full py-10 rounded-xl border-2 border-dashed flex flex-col items-center gap-3 transition hover:bg-white/3 disabled:opacity-50"
+                style={{ borderColor: 'var(--dc-border)' }}>
+                {uploading
+                  ? <><RefreshCw size={28} className="text-blue-400 animate-spin" /><p className="text-sm text-slate-400">{t.docsUploading}</p></>
+                  : <><Upload size={28} className="text-slate-400" /><p className="text-sm text-slate-400">{t.docsSelectFile}</p><p className="text-xs text-slate-600">PDF, JPG, PNG, DOCX…</p></>
+                }
+              </button>
+            )}
+            {uploadError && <p className="text-xs text-red-400 text-center">{uploadError}</p>}
+          </div>
+        </div>
+      )}
+
       <div className="shrink-0 px-4 pt-4 pb-3 space-y-3">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -226,12 +285,19 @@ export default function DocsPage() {
               className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-2xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-500 transition"
             />
           </div>
-          <div className="flex bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shrink-0">
-            <button type="button" onClick={() => setView('list')} className={`px-3 py-2.5 transition ${view === 'list' ? 'bg-cyan-500/20 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`} title="Lijst">
-              <List size={16} />
+          <button onClick={() => setShowUpload(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-white shrink-0 transition"
+            style={{ background: 'var(--dc-blue)' }}>
+            <Upload size={14} />
+            <span className="hidden sm:inline">{t.docsUpload}</span>
+          </button>
+          <div className="flex rounded-xl overflow-hidden shrink-0"
+            style={{ background: 'var(--dc-surf2)', border: '1px solid var(--dc-border)' }}>
+            <button type="button" onClick={() => setView('list')} className={`px-3 py-2 transition ${view === 'list' ? 'text-blue-400 bg-blue-500/10' : 'text-slate-500 hover:text-slate-300'}`} title="Lijst">
+              <List size={15} />
             </button>
-            <button type="button" onClick={() => setView('tree')} className={`px-3 py-2.5 transition ${view === 'tree' ? 'bg-cyan-500/20 text-cyan-400' : 'text-slate-500 hover:text-slate-300'}`} title="Archief">
-              <GitBranch size={16} />
+            <button type="button" onClick={() => setView('tree')} className={`px-3 py-2 transition ${view === 'tree' ? 'text-blue-400 bg-blue-500/10' : 'text-slate-500 hover:text-slate-300'}`} title="Archief">
+              <GitBranch size={15} />
             </button>
           </div>
         </div>

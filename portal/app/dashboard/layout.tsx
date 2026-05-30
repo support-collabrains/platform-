@@ -17,7 +17,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <>
       {/* ── Desktop layout (≥ md) ──────────────────────────────────────────── */}
       <div className="hidden md:flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
-        <Sidebar username={username} unreadMail={0} openTasks={0} logoutUrl={logoutUrl} />
+        <Sidebar username={username} unreadMail={0} openTasks={0} logoutUrl={logoutUrl} isAdmin={isAdmin} />
         <div className="flex flex-1 flex-col overflow-hidden">
           <Header username={username} />
           <main className="flex-1 overflow-y-auto p-6">

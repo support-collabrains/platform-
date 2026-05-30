@@ -1,0 +1,12 @@
+http:
+  routers:
+    paperless:
+      rule: "Host(`docs.platform.cbrains.de`)"
+      service: paperless
+      tls:
+        certResolver: letsencrypt
+  services:
+    paperless:
+      loadBalancer:
+        servers:
+          - url: "http://platform-paperless-1:8000"

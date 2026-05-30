@@ -1,0 +1,18 @@
+  signal-chatbot:
+    build: ./signal-chatbot
+    container_name: platform-signal-chatbot-1
+    restart: unless-stopped
+    environment:
+      - SIGNAL_API_URL=http://platform-signal-api-1:8080
+      - DB_HOST=db
+      - DB_NAME=platform
+      - DB_USER=platform
+      - DB_PASSWORD=${DB_PASSWORD}
+      - PAPERLESS_URL=http://platform-paperless-1:8000
+      - PAPERLESS_TOKEN=${PAPERLESS_ADMIN_TOKEN}
+    networks:
+      - platform
+    depends_on:
+      - db
+      - paperless
+      - signal-api

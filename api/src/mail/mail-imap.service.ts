@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import * as bcrypt from 'bcrypt';
 import * as mysql2 from 'mysql2/promise';
+import * as nodemailer from 'nodemailer';
 import { ImapFlow } from 'imapflow';
 import { simpleParser } from 'mailparser';
 import createDOMPurify from 'dompurify';
@@ -312,6 +313,20 @@ export class MailImapService {
       this.logger.warn(`getVacation Mailcow request failed: ${(err as Error).message}`);
       return { active: false, subject: '', body: '' };
     }
+  }
+
+  async sendMail(uid: string, to: string, subject: string, body: string): Promise<void> {
+    const creds = await this.getCredentials(uid);
+    // Internal Docker relay on port 25 — no auth, no TLS (trusted network)
+    const smtpHost = this.config.get('SMTP_RELAY_HOST') ?? 'postfix-mailcow';
+    const transport = nodemailer.createTransport({
+      host: smtpHost,
+      port: 25,
+      secure: false,
+      ignoreTLS: true,
+    });
+    await transport.sendMail({ from: creds.user, to, subject, text: body });
+    transport.close();
   }
 
   async setVacation(uid: string, active: boolean, subject: string, body: string): Promise<VacationState> {

@@ -15,5 +15,6 @@ import { TicketsModule } from '../tickets/tickets.module';
   ],
   providers: [OllamaService, DocumentsService],
   controllers: [DocumentsController],
+  exports: [OllamaService],
 })
 export class DocumentsModule {}

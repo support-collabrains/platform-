@@ -1,0 +1,367 @@
+# Production-only. No mock services, no dev shortcuts.
+# Requires Docker Compose CLI v2.20+ for include: support.
+
+include:
+  - path: ./core/mailcow/docker-compose.yml
+
+  platform:
+    # Named explicitly so the mailcow override can reference it as external.
+    name: platform
+    driver: bridge
+
+volumes:
+  db_data:
+  authentik_data:
+  authentik_media:
+  authentik_certs:
+  traefik_certs:
+  caddy_data:
+  caddy_config:
+  paperless_data:
+  paperless_media:
+  signal_data:
+  backup_data:
+  ollama_data:
+  radicale_data:
+  immich_data:
+  immich_db_data:
+
+services:
+
+  # ── Caddy (reverse proxy, vervangt Traefik) ──────────────────────────────
+  caddy:
+    image: caddy:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - mailcow-network
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+      - POSTGRES_DB=platform
+      - POSTGRES_USER=platform
+      - POSTGRES_PASSWORD=${DB_PASSWORD:?DB_PASSWORD required}
+    volumes:
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Platform API (NestJS) ────────────────────────────────────────────────
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_URL=postgresql://platform:${DB_PASSWORD}@db:5432/platform
+      - PORTAL_ORIGIN=https://portal.${PRIMARY_DOMAIN:?PRIMARY_DOMAIN required}
+      - AUTHENTIK_URL=http://authentik-server:9000
+      - AUTHENTIK_BOOTSTRAP_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN}
+      - MAILCOW_URL=http://nginx-mailcow:8080
+      - MAILCOW_API_KEY=${MAILCOW_API_KEY:-}
+      - MAILCOW_DB_HOST=mysql-mailcow
+      - MAILCOW_DB_NAME=mailcow
+      - MAILCOW_DB_USER=mailcow
+      - MAILCOW_DB_PASS=${MAILCOW_DB_PASS:-}
+      - TRAEFIK_CONFIG_DIR=/etc/traefik-dynamic
+      - PRIMARY_DOMAIN=${PRIMARY_DOMAIN}
+      - MAIL_DOMAIN=${MAIL_DOMAIN}
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - TIMEZONE=${TIMEZONE:-UTC}
+      - PAPERLESS_INTERNAL_URL=http://paperless:8000
+      - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+      - PAPERLESS_DATA_DIR=/data/paperless
+      - AUTHENTIK_WEBHOOK_SECRET=${AUTHENTIK_WEBHOOK_SECRET}
+      - SIGNAL_API_URL=http://signal-api:8080
+      - SIGNAL_SENDER=${SIGNAL_SENDER}
+      - SIGNAL_RECIPIENT=${SIGNAL_RECIPIENT}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - QUEUE_REDIS_URL=redis://queue-redis:6379
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2}
+      - IMMICH_INTERNAL_URL=http://immich-server:2283
+      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+    volumes:
+      - ./config/traefik:/etc/traefik-dynamic
+      - ./data/paperless:/data/paperless
+      db:
+        condition: service_healthy
+      signal-api:
+        condition: service_started
+      queue-redis:
+        condition: service_started
+      - mailcow-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/health 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Platform Portal (Next.js) ────────────────────────────────────────────
+  portal:
+    build:
+      context: ./portal
+      dockerfile: Dockerfile
+      - NEXT_PUBLIC_API_URL=https://portal.${PRIMARY_DOMAIN}/api
+      - NEXT_PUBLIC_LOGOUT_URL=https://auth.${PRIMARY_DOMAIN}/if/session-end/collaBrains/
+      - INTERNAL_API_URL=http://api:3001
+      - AUTHENTIK_WEBHOOK_SECRET=${AUTHENTIK_WEBHOOK_SECRET}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── Authentik ────────────────────────────────────────────────────────────
+  postgresql-authentik:
+    image: postgres:16-alpine
+      - POSTGRES_DB=authentik
+      - POSTGRES_USER=authentik
+      - POSTGRES_PASSWORD=${AUTHENTIK_DB_PASSWORD:?AUTHENTIK_DB_PASSWORD required}
+    volumes:
+      - authentik_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authentik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis-authentik:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.6
+    command: server
+      - AUTHENTIK_REDIS__HOST=redis-authentik
+      - AUTHENTIK_POSTGRESQL__HOST=postgresql-authentik
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY:?AUTHENTIK_SECRET_KEY required}
+      - AUTHENTIK_BOOTSTRAP_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN:?required}
+      - AUTHENTIK_BOOTSTRAP_EMAIL=${ADMIN_EMAIL:?ADMIN_EMAIL required}
+      - AUTHENTIK_BOOTSTRAP_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD required}
+    ports:
+      - "389:3389"
+      - "636:6636"
+    volumes:
+      - authentik_media:/media
+      - authentik_certs:/certs
+      - ./config/authentik-custom.css:/web/dist/custom.css:ro
+      postgresql-authentik:
+        condition: service_healthy
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2024.6
+    command: worker
+      - AUTHENTIK_REDIS__HOST=redis-authentik
+      - AUTHENTIK_POSTGRESQL__HOST=postgresql-authentik
+      - AUTHENTIK_POSTGRESQL__USER=authentik
+      - AUTHENTIK_POSTGRESQL__PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - AUTHENTIK_POSTGRESQL__NAME=authentik
+      - AUTHENTIK_SECRET_KEY=${AUTHENTIK_SECRET_KEY}
+    volumes:
+      - authentik_media:/media
+      - authentik_certs:/certs
+
+  # ── Backup ──────────────────────────────────────────────────────────────
+  backup:
+    build:
+      context: .
+      dockerfile: config/backup.Dockerfile
+    env_file:
+      - .env
+      - ./core/mailcow/mailcow.conf
+      - PGPASSWORD=${DB_PASSWORD}
+      - AUTHENTIK_DB_PASSWORD=${AUTHENTIK_DB_PASSWORD}
+      - BACKUP_DIR=/backups
+    volumes:
+      - ./scripts/backup.sh:/backup.sh:ro
+      - ./backups:/backups
+      - vmail-vol-1:/vmail:ro
+      - traefik_certs:/traefik_certs:ro
+      - signal_data:/signal_data:ro
+    entrypoint: ["/bin/sh", "-c", "echo '0 3 * * * /bin/sh /backup.sh >> /backups/backup.log 2>&1' | crontab - && crond -f -d 8"]
+      db:
+        condition: service_healthy
+      - mailcow-network
+
+  # ── Signal CLI REST API ──────────────────────────────────────────────────
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+      - MODE=native
+    volumes:
+      - signal_data:/home/.local/share/signal-cli
+
+  # ── Paperless-ngx ────────────────────────────────────────────────────────
+  paperless-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+      db:
+        condition: service_healthy
+      paperless-redis:
+        condition: service_started
+      - PAPERLESS_URL=https://docs.${PRIMARY_DOMAIN}
+      - PAPERLESS_CSRF_TRUSTED_ORIGINS=https://docs.${PRIMARY_DOMAIN}
+      - PAPERLESS_USE_X_FORWARDED_HOST=True
+      - PAPERLESS_USE_X_FORWARDED_PORT=True
+      - PAPERLESS_SECURE_PROXY_SSL_HEADER=HTTP_X_FORWARDED_PROTO,https
+      - PAPERLESS_DISABLE_REGULAR_LOGIN=false
+      - PAPERLESS_REDIRECT_LOGIN_TO_SSO=false
+
+      - PAPERLESS_REDIS=redis://paperless-redis:6379
+      - PAPERLESS_DBENGINE=postgresql
+      - PAPERLESS_DBHOST=db
+      - PAPERLESS_DBNAME=paperless
+      - PAPERLESS_DBUSER=platform
+      - PAPERLESS_DBPASS=${DB_PASSWORD}
+      - PAPERLESS_SECRET_KEY=${PAPERLESS_SECRET_KEY}
+      - PAPERLESS_ADMIN_USER=admin
+      - PAPERLESS_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - PAPERLESS_ADMIN_MAIL=${ADMIN_EMAIL}
+      - PAPERLESS_TIME_ZONE=${TIMEZONE:-UTC}
+      - PAPERLESS_OCR_LANGUAGE=nld+deu+eng
+      - PAPERLESS_OCR_LANGUAGES=nld
+      - PAPERLESS_OCR_MODE=skip
+      - PAPERLESS_CONSUMER_RECURSIVE="true"
+      - PAPERLESS_CONSUMER_SUBDIRS_AS_TAGS="true"
+      - PAPERLESS_FILENAME_FORMAT="{{ owner_username }}/{{ document_type }}/{{ created_year }}/{{ title }}"
+      - USERMAP_UID=1000
+      - USERMAP_GID=1000
+    volumes:
+      - ./data/paperless/export:/usr/src/paperless/export
+      - ./data/paperless/consume:/usr/src/paperless/consume
+      - ./scripts/paperless-post-consume.sh:/usr/src/paperless/scripts/post_consume.sh:ro
+      - mailcow-network
+
+  # ── BullMQ Redis ─────────────────────────────────────────────────────────
+  queue-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Ollama (local LLM for document summaries) ────────────────────────────
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:11434/api/tags 2>/dev/null || exit 0"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+
+  # ── paperless-gpt (AI auto-tagging via Ollama) ───────────────────────────
+  paperless-gpt:
+    image: ghcr.io/icereed/paperless-gpt:latest
+      - PAPERLESS_BASE_URL=http://paperless:8000
+      - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+      - LLM_PROVIDER=ollama
+      - OLLAMA_HOST=http://ollama:11434
+      - LLM_MODEL=${OLLAMA_MODEL:-mistral}
+      - LLM_LANGUAGE="Dutch, German or English — use the same language as the document"
+      - MANUAL_TAG=paperless-gpt
+      - AUTO_PROCESS_DOCUMENTS="true"
+      - ollama
+
+  # ── Radicale (CalDAV / CardDAV) ──────────────────────────────────────────
+  radicale:
+    image: tomsquest/docker-radicale:latest
+      - RADICALE_CONFIG=/config/radicale.cfg
+    volumes:
+      - radicale_data:/data
+      - ./config/radicale.cfg:/config/radicale.cfg:ro
+
+  # ── Immich (foto-archief) ────────────────────────────────────────────────
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+      - DB_HOSTNAME=immich-db
+      - DB_USERNAME=immich
+      - DB_PASSWORD=${IMMICH_DB_PASS:-immich_secret}
+      - DB_DATABASE_NAME=immich
+      - REDIS_HOSTNAME=immich-redis
+      - UPLOAD_LOCATION=/usr/src/app/upload
+      - JWT_SECRET=${IMMICH_JWT_SECRET:-changeme_immich_jwt}
+      - IMMICH_SERVER_URL=https://fotos.${PRIMARY_DOMAIN}
+    volumes:
+      - immich_data:/usr/src/app/upload
+      - immich-db
+      - immich-redis
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:2283/api/server/ping 2>/dev/null || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  immich-machine-learning:
+    image: ghcr.io/immich-app/immich-machine-learning:release
+    volumes:
+      - immich_data:/cache
+
+  immich-redis:
+    image: redis:7-alpine
+
+  immich-db:
+    image: ghcr.io/immich-app/postgres:14-vectorchord0.3.0-pgvectors0.2.0
+      - POSTGRES_USER=immich
+      - POSTGRES_PASSWORD=${IMMICH_DB_PASS:-immich_secret}
+      - POSTGRES_DB=immich
+    volumes:
+      - immich_db_data:/var/lib/postgresql/data
+
+  # ── User provisioning (Authentik → Paperless, eenmalig bij start) ─────────
+  user-sync:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.scripts
+    command: python sync_users.py
+    restart: "no"
+      - AUTHENTIK_URL=http://authentik-server:9000
+      - AUTHENTIK_BOOTSTRAP_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN}
+      - PAPERLESS_INTERNAL_URL=http://paperless:8000
+      - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+      - authentik-server
+
+  # ── Signal → Paperless document consumer ─────────────────────────────────
+  signal-consumer:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.scripts
+    command: python -u signal_consumer.py
+      - PYTHONUNBUFFERED=1
+      - SIGNAL_API_URL=http://signal-api:8080
+      - SIGNAL_SENDER=${SIGNAL_SENDER}
+      - PAPERLESS_INTERNAL_URL=http://paperless:8000
+      - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN}
+      - AUTHENTIK_URL=http://authentik-server:9000
+      - AUTHENTIK_BOOTSTRAP_TOKEN=${AUTHENTIK_BOOTSTRAP_TOKEN}
+      - QUEUE_REDIS_URL=redis://queue-redis:6379
+      - authentik-server
+      - queue-redis
+

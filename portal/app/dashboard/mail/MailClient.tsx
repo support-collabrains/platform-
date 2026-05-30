@@ -2,7 +2,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, Trash2, Pencil, X, Send } from 'lucide-react';
 import { useT } from '../LangContext';
 
 interface FolderStat { name: string; unread: number }
@@ -38,6 +38,9 @@ export default function MailClient() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [error, setError] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [composing, setComposing] = useState(false);
+  const [compose, setCompose] = useState({ to: '', subject: '', body: '' });
+  const [sending, setSending] = useState(false);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -122,13 +125,79 @@ export default function MailClient() {
   const allFolders = [...new Set([...DEFAULT_FOLDERS, ...folderStats.map(f => f.name)])];
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  async function sendCompose() {
+    if (!compose.to || !compose.subject) return;
+    setSending(true);
+    try {
+      await fetch('/api/me/mail/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(compose),
+      });
+      setComposing(false);
+      setCompose({ to: '', subject: '', body: '' });
+      fetchStats();
+    } finally { setSending(false); }
+  }
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" style={{ background: 'var(--dc-bg)' }}>
+      {/* Compose modal */}
+      {composing && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl"
+            style={{ background: 'var(--dc-surface)', border: '1px solid var(--dc-border)' }}>
+            <div className="flex items-center justify-between px-4 py-3"
+              style={{ borderBottom: '1px solid var(--dc-border)' }}>
+              <h3 className="text-sm font-semibold text-slate-200">{t.mailCompose}</h3>
+              <button onClick={() => setComposing(false)} className="p-1.5 text-slate-500 hover:text-slate-300 hover:bg-white/5 rounded-lg transition">
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-4 space-y-2">
+              {[
+                { key: 'to' as const, label: t.mailTo, type: 'email', placeholder: 'naam@voorbeeld.nl' },
+                { key: 'subject' as const, label: t.mailSubject ?? 'Onderwerp', type: 'text', placeholder: 'Onderwerp' },
+              ].map(({ key, label, type, placeholder }) => (
+                <div key={key}>
+                  <label className="text-xs text-slate-500 block mb-1">{label}</label>
+                  <input type={type} value={compose[key]} placeholder={placeholder}
+                    onChange={e => setCompose(p => ({ ...p, [key]: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-xl text-sm text-slate-100 focus:outline-none"
+                    style={{ background: 'var(--dc-bg)', border: '1px solid var(--dc-border)' }} />
+                </div>
+              ))}
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Bericht</label>
+                <textarea rows={6} value={compose.body}
+                  onChange={e => setCompose(p => ({ ...p, body: e.target.value }))}
+                  placeholder="Typ je bericht hier…"
+                  className="w-full px-3 py-2 rounded-xl text-sm text-slate-100 resize-none focus:outline-none"
+                  style={{ background: 'var(--dc-bg)', border: '1px solid var(--dc-border)' }} />
+              </div>
+              <button onClick={() => void sendCompose()} disabled={sending || !compose.to || !compose.subject}
+                className="w-full py-2.5 rounded-xl text-sm font-medium text-white flex items-center justify-center gap-2 transition disabled:opacity-40"
+                style={{ background: sending || !compose.to ? 'var(--dc-border)' : 'var(--dc-blue)' }}>
+                {sending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                {t.mailSend ?? 'Versturen'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Folder chip row ──────────────────────────── */}
-      <div className="shrink-0 flex items-center gap-2 px-3 py-2.5 overflow-x-auto border-b border-slate-800 bg-slate-900 scrollbar-none">
+      <div className="shrink-0 flex items-center gap-2 px-3 py-2 overflow-x-auto scrollbar-none"
+        style={{ background: 'var(--dc-surface)', borderBottom: '1px solid var(--dc-border)' }}>
+        <button onClick={() => setComposing(true)}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition"
+          style={{ background: 'var(--dc-blue)' }}>
+          <Pencil size={12} />{t.mailCompose}
+        </button>
+        <div className="w-px h-4 bg-slate-700 mx-0.5 shrink-0" />
         <button
           onClick={() => { fetchStats(); fetchMessages(folder, page); }}
-          className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-cyan-400 hover:bg-slate-800 transition"
+          className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-blue-400 hover:bg-white/5 transition"
         >
           <RefreshCw size={14} className={loadingList ? 'animate-spin' : ''} />
         </button>

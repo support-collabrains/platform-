@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, NotFoundException, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { InternalSecretGuard } from './internal-secret.guard';
 import { UsersMeService, UserPreferences } from './users-me.service';
 import { TicketsService } from '../tickets/tickets.service';
@@ -29,6 +30,35 @@ export class UsersMeController {
   async documents(@Headers('x-authentik-username') username: string): Promise<object> {
     const user = await this.service.resolveUser(username);
     return { docs: await this.service.getDocuments(user.username) };
+  }
+
+  @Get('documents/:id')
+  async getDocument(
+    @Headers('x-authentik-username') username: string,
+    @Param('id') id: string,
+  ): Promise<object> {
+    const user = await this.service.resolveUser(username);
+    const doc = await this.service.getDocumentById(Number(id), user.username);
+    if (!doc) throw new NotFoundException('Document niet gevonden of geen toegang');
+    return doc;
+  }
+
+  @Get('documents/:id/preview')
+  async previewDocument(
+    @Headers('x-authentik-username') username: string,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ): Promise<void> {
+    const user = await this.service.resolveUser(username);
+    const result = await this.service.getDocumentPreview(Number(id), user.username);
+    if (!result) {
+      res.status(404).json({ error: 'Document niet gevonden of geen toegang' });
+      return;
+    }
+    const ct = result.headers['content-type'] ?? 'application/pdf';
+    res.setHeader('content-type', String(ct));
+    res.setHeader('content-disposition', 'inline');
+    res.status(200).send(Buffer.from(result.data));
   }
 
   @Get('document-types')

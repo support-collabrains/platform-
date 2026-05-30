@@ -4,6 +4,7 @@ import { UsersMeService, UserPreferences } from './users-me.service';
 import { TicketsService } from '../tickets/tickets.service';
 import { AuditService } from '../audit/audit.service';
 import { CalendarService } from '../calendar/calendar.service';
+import { LdapMetadataService } from '../ldap/ldap-metadata.service';
 
 @Controller('users/me')
 @UseGuards(InternalSecretGuard)
@@ -13,6 +14,7 @@ export class UsersMeController {
     private readonly tickets: TicketsService,
     private readonly audit: AuditService,
     private readonly calendar: CalendarService,
+    private readonly ldap: LdapMetadataService,
   ) {}
 
   @Get('profile')
@@ -126,5 +128,25 @@ export class UsersMeController {
     });
     await this.audit.log(username, 'calendar.event.create', uid, { summary: body.summary, start: body.start });
     return { uid };
+  }
+
+  @Patch('ldap-profile')
+  @HttpCode(200)
+  async updateLdapProfile(
+    @Headers('x-authentik-username') username: string,
+    @Body() body: { signalPhone?: string; defaultArchivePath?: string },
+  ) {
+    const patch: Record<string, string> = {};
+    if (body.signalPhone !== undefined) patch.signalPhone = body.signalPhone;
+    if (body.defaultArchivePath !== undefined) patch.defaultArchivePath = body.defaultArchivePath;
+    if (Object.keys(patch).length > 0) {
+      await this.ldap.setAttributes(username, patch);
+    }
+    return this.ldap.getAttributes(username);
+  }
+
+  @Get('ldap-profile')
+  async getLdapProfile(@Headers('x-authentik-username') username: string) {
+    return this.ldap.getAttributes(username);
   }
 }

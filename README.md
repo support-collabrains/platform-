@@ -249,6 +249,50 @@ Key variables in `.env` (see `.env.example` for the full list):
 
 ---
 
+## Quick Start
+
+```bash
+# 1. Clone and configure
+git clone https://github.com/support-collabrains/platform.git
+cd platform
+cp .env.example .env
+# Edit .env with your domains, passwords, etc.
+
+# 2. Generate VAPID keys for push notifications
+npx web-push generate-vapid-keys
+# Add the output to VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY in .env
+
+# 3. Start all services
+docker-compose up --build -d
+
+# 4. Pull Ollama model (required for AI document tagging)
+docker exec platform_ollama_1 ollama pull llama3.2
+
+# 5. Generate Paperless API token
+# Visit https://docs.YOUR_DOMAIN/api/auth/token/
+# Add the token to PAPERLESS_API_TOKEN in .env, then restart the api service:
+docker-compose restart api
+
+# 6. First-time Authentik setup
+# Visit https://auth.YOUR_DOMAIN
+# Login with admin credentials from .env (ADMIN_EMAIL / ADMIN_PASSWORD)
+
+# 7. Test push notifications
+# Open the portal, go to Profile settings
+# The browser will prompt for notification permission
+# Send a test document to the consume folder to trigger a push notification
+```
+
+## Documents AI Tagging
+
+Documents consumed by Paperless are automatically categorized by Ollama into one of:
+Financieel, Medisch, Contract, Auto, Overheid, Persoonlijk, Woning, Verzekering, Onderwijs, Overig
+
+The category is applied as a Paperless tag and the document is archived at:
+`{owner}/{category}/{year}/{month}/`
+
+---
+
 ## Hard fail rules
 
 Onboarding is blocked if:

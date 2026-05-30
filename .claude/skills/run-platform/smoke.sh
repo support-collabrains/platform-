@@ -14,6 +14,10 @@ API_IP=$(docker inspect platform-api-1 --format '{{(index .NetworkSettings.Netwo
 PORTAL_IP=$(docker inspect platform-portal-1 --format '{{(index .NetworkSettings.Networks "platform").IPAddress}}' 2>/dev/null)
 PAPERLESS_IP=$(docker inspect platform-paperless-1 --format '{{(index .NetworkSettings.Networks "platform").IPAddress}}' 2>/dev/null)
 AUTH_IP=$(docker inspect platform-authentik-server-1 --format '{{(index .NetworkSettings.Networks "platform").IPAddress}}' 2>/dev/null)
+SIGNAL_API_IP=$(docker inspect platform-signal-api-1 --format '{{(index .NetworkSettings.Networks "platform").IPAddress}}' 2>/dev/null || echo "")
+QUEUE_REDIS_IP=$(docker inspect platform-queue-redis-1 --format '{{(index .NetworkSettings.Networks "platform").IPAddress}}' 2>/dev/null || echo "")
+
+INTERNAL_SECRET="${INTERNAL_API_SECRET:-}"
 
 SCREENSHOTS=false
 API_ONLY=false
@@ -33,7 +37,7 @@ echo "=== Platform Smoke Test ==="
 echo ""
 
 # --- Docker service health ---
-echo "-- Service health --"
+echo "-- Core service health --"
 for svc in db api portal authentik-server paperless; do
   STATUS=$(docker inspect "platform-${svc}-1" --format '{{.State.Status}}' 2>/dev/null || echo "missing")
   HEALTH=$(docker inspect "platform-${svc}-1" --format '{{.State.Health.Status}}' 2>/dev/null || echo "")
@@ -41,6 +45,24 @@ for svc in db api portal authentik-server paperless; do
   [ -n "$HEALTH" ] && LABEL="${svc} ($HEALTH)"
   if [ "$STATUS" = "running" ]; then ok "$LABEL: running"; else fail "$LABEL: $STATUS"; fi
 done
+
+echo ""
+echo "-- Signal / queue services --"
+for svc in signal-api queue-redis; do
+  STATUS=$(docker inspect "platform-${svc}-1" --format '{{.State.Status}}' 2>/dev/null || echo "missing")
+  HEALTH=$(docker inspect "platform-${svc}-1" --format '{{.State.Health.Status}}' 2>/dev/null || echo "")
+  LABEL="${svc}"
+  [ -n "$HEALTH" ] && LABEL="${svc} ($HEALTH)"
+  if [ "$STATUS" = "running" ]; then ok "$LABEL: running"
+  elif [ "$STATUS" = "missing" ]; then echo "  [--]  $svc: not deployed yet"
+  else fail "$LABEL: $STATUS"; fi
+done
+
+# signal-api HTTP health (if running)
+if [ -n "$SIGNAL_API_IP" ]; then
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${SIGNAL_API_IP}:8080/v1/about" || echo "error")
+  [ "$CODE" = "200" ] && ok "signal-api /v1/about → 200" || fail "signal-api /v1/about → $CODE"
+fi
 
 # --- API routes ---
 echo ""
@@ -57,6 +79,22 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
   -H "Content-Type: application/json" -d '{}')
 if [ "$CODE" = "401" ]; then ok "POST /webhook/authentik bad token → 401"
 else fail "POST /webhook/authentik bad token → HTTP $CODE (expected 401)"; fi
+
+# Admin users list (requires x-internal-secret + x-authentik-groups: platform-admins)
+if [ -n "$INTERNAL_SECRET" ]; then
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+    "http://${API_IP}:3001/admin/users" \
+    -H "x-internal-secret: ${INTERNAL_SECRET}" \
+    -H "x-authentik-groups: platform-admins")
+  [ "$CODE" = "200" ] && ok "GET /admin/users (platform-admins) → 200" || fail "GET /admin/users → $CODE"
+fi
+
+# POST /documents/consumed (Paperless post-consume webhook — Priority 3)
+CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+  -X POST "http://${API_IP}:3001/documents/consumed" \
+  -H "Content-Type: application/json" \
+  -d '{"documentId":0,"owner":"smoke","title":"smoke"}')
+[ "$CODE" = "200" ] || [ "$CODE" = "201" ] && ok "POST /documents/consumed → $CODE" || fail "POST /documents/consumed → $CODE"
 
 if ! $API_ONLY; then
   # --- Portal ---
@@ -80,9 +118,9 @@ if ! $API_ONLY; then
   if [ "$PL_HEALTH" = "healthy" ]; then ok "paperless: healthy"
   else fail "paperless: $PL_HEALTH"; fi
 
-  # Quick HTTP check through its port
   CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${PAPERLESS_IP}:8000/")
-  [ "$CODE" = "200" ] || [ "$CODE" = "302" ] && ok "paperless HTTP $CODE" || fail "paperless HTTP $CODE"
+  if [ "$CODE" = "200" ] || [ "$CODE" = "302" ]; then ok "paperless HTTP $CODE"
+  else fail "paperless HTTP $CODE"; fi
 fi
 
 # --- Screenshots ---

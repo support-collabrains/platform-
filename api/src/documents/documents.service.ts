@@ -90,6 +90,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
 
     // Trigger paperless-gpt AI classification in background
     this.tagDocumentForGpt(paperlessId).catch(() => {});
+    this.categorizeDocument(paperlessId, owner, title).catch(() => {});
 
     const { phones, signalDocNotify, language } = await this.getPhonesAndPrefsForUser(owner);
     if (!signalDocNotify) {
@@ -498,6 +499,86 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
       await this.sendSignal(phone, t.failed(title, msg));
       await this.notifRepo.update(notificationId, { status: 'failed' });
     }
+  }
+
+  private readonly CATEGORIES = [
+    'Financieel', 'Medisch', 'Contract', 'Auto', 'Overheid',
+    'Persoonlijk', 'Woning', 'Verzekering', 'Onderwijs', 'Overig',
+  ] as const;
+
+  private async categorizeDocument(paperlessId: number, owner: string, title: string): Promise<void> {
+    try {
+      const text = await this.fetchDocumentText(paperlessId);
+      if (!text || text.length < 20) {
+        this.logger.log(`Document #${paperlessId} has insufficient text for categorization`);
+        return;
+      }
+
+      const prompt = `You are a document classifier. Classify the following document into EXACTLY ONE of these categories (respond with only the category name, nothing else):
+Financieel, Medisch, Contract, Auto, Overheid, Persoonlijk, Woning, Verzekering, Onderwijs, Overig
+
+Document title: ${title}
+
+Document text (first 2000 chars):
+${text.slice(0, 2000)}
+
+Category:`;
+
+      const raw = await this.ollama.summarize(prompt);
+      const rawTrimmed = raw.trim();
+
+      const category = this.CATEGORIES.find(
+        c => rawTrimmed.toLowerCase() === c.toLowerCase() || rawTrimmed.toLowerCase().includes(c.toLowerCase()),
+      ) ?? 'Overig';
+
+      this.logger.log(`Document #${paperlessId} categorized as: ${category}`);
+
+      // Get or create the category tag
+      const tagId = await this.getOrCreatePaperlessTag(category, this.categoryColor(category));
+
+      // Fetch current doc tags
+      const { data: doc } = await axios.get(
+        `${this.paperlessUrl}/api/documents/${paperlessId}/`,
+        { headers: { Authorization: `Token ${this.paperlessToken}` }, timeout: 10_000 },
+      );
+      const existingTags = (doc.tags as number[]) ?? [];
+
+      // Determine storage path
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const storagePath = `${owner}/${category}/${year}/${month}`;
+
+      // Update document: add category tag + set storage path custom field
+      await axios.patch(
+        `${this.paperlessUrl}/api/documents/${paperlessId}/`,
+        {
+          tags: [...new Set([...existingTags, tagId])],
+          archive_filename: storagePath + '/' + (doc.original_filename as string ?? `doc-${paperlessId}`),
+        },
+        { headers: { Authorization: `Token ${this.paperlessToken}` }, timeout: 10_000 },
+      );
+
+      this.logger.log(`Document #${paperlessId} tagged and path set to ${storagePath}`);
+    } catch (err) {
+      this.logger.warn(`Category tagging failed for #${paperlessId}: ${(err as Error).message}`);
+    }
+  }
+
+  private categoryColor(category: string): string {
+    const colors: Record<string, string> = {
+      'Financieel': '#10b981',
+      'Medisch': '#ef4444',
+      'Contract': '#3b82f6',
+      'Auto': '#f59e0b',
+      'Overheid': '#8b5cf6',
+      'Persoonlijk': '#ec4899',
+      'Woning': '#06b6d4',
+      'Verzekering': '#f97316',
+      'Onderwijs': '#84cc16',
+      'Overig': '#6b7280',
+    };
+    return colors[category] ?? '#6b7280';
   }
 
   private async tagDocumentForGpt(paperlessId: number): Promise<void> {

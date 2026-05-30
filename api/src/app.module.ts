@@ -17,6 +17,9 @@ import { AuditModule } from './audit/audit.module';
 import { MailModule } from './mail/mail.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { LdapModule } from './ldap/ldap.module';
+import { PushModule } from './push/push.module';
+import { PushSubscription } from './push/push-subscription.entity';
+import { GatewayModule } from './gateway/gateway.module';
 
 @Module({
   imports: [
@@ -27,7 +30,7 @@ import { LdapModule } from './ldap/ldap.module';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary, SignalTicket, AuditEvent],
+        entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary, SignalTicket, AuditEvent, PushSubscription],
         synchronize: true,
         ssl: config.get('DATABASE_SSL') === 'true' ? { rejectUnauthorized: false } : false,
       }),
@@ -43,6 +46,8 @@ import { LdapModule } from './ldap/ldap.module';
     AuditModule,
     MailModule,
     CalendarModule,
+    PushModule,
+    GatewayModule,
   ],
 })
 export class AppModule {}

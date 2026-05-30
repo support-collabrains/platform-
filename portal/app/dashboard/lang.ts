@@ -73,6 +73,9 @@ const nl = {
   calendarNoEvents: 'Geen evenementen',
   calendarAdd: 'Toevoegen',
   calendarAllDay: 'Hele dag',
+  // Docs
+  noArchive: 'Geen archief beschikbaar',
+  selectCategory: 'Selecteer een categorie',
 };
 
 const de: typeof nl = {
@@ -145,6 +148,8 @@ const de: typeof nl = {
   calendarNoEvents: 'Keine Termine',
   calendarAdd: 'Hinzufügen',
   calendarAllDay: 'Ganzer Tag',
+  noArchive: 'Kein Archiv verfügbar',
+  selectCategory: 'Kategorie auswählen',
 };
 
 const en: typeof nl = {
@@ -217,6 +222,8 @@ const en: typeof nl = {
   calendarNoEvents: 'No events',
   calendarAdd: 'Add',
   calendarAllDay: 'All day',
+  noArchive: 'No archive available',
+  selectCategory: 'Select a category',
 };
 
 export const translations: Record<Lang, typeof nl> = { nl, de, en };

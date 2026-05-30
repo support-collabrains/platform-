@@ -7,9 +7,10 @@ import { InternalSecretGuard } from './internal-secret.guard';
 import { TicketsModule } from '../tickets/tickets.module';
 import { AuditModule } from '../audit/audit.module';
 import { CalendarModule } from '../calendar/calendar.module';
+import { LdapModule } from '../ldap/ldap.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DocDocument, DocNotification]), TicketsModule, AuditModule, CalendarModule],
+  imports: [TypeOrmModule.forFeature([DocDocument, DocNotification]), TicketsModule, AuditModule, CalendarModule, LdapModule],
   providers: [UsersMeService, InternalSecretGuard],
   controllers: [UsersMeController],
 })

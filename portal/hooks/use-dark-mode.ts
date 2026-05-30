@@ -8,17 +8,10 @@ export function useDarkMode() {
 
   useEffect(() => {
     const stored = localStorage.getItem('theme');
-    if (stored === 'dark') {
-      setDark(true);
-      document.documentElement.classList.add('dark');
-    } else if (stored === 'light') {
-      setDark(false);
-      document.documentElement.classList.remove('dark');
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      setDark(prefersDark);
-      document.documentElement.classList.toggle('dark', prefersDark);
-    }
+    // Default to dark when no stored preference
+    const isDark = stored !== 'light';
+    setDark(isDark);
+    document.documentElement.classList.toggle('dark', isDark);
   }, []);
 
   function toggle() {

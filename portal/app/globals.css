@@ -2,7 +2,22 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+/* Light mode (default) */
 :root {
+  --dc-bg:      #f1f5f9;
+  --dc-surface: #ffffff;
+  --dc-surf2:   #e2e8f0;
+  --dc-border:  #cbd5e1;
+  --dc-blue:    #2563eb;
+  --dc-cyan:    #0891b2;
+  --dc-text:    #0f172a;
+  --dc-muted:   #64748b;
+  --background: var(--dc-bg);
+  --foreground: var(--dc-text);
+}
+
+/* Dark mode — also remap Tailwind slate so bg-slate-* classes switch */
+html.dark {
   --dc-bg:      #0a0f1e;
   --dc-surface: #111827;
   --dc-surf2:   #1a2235;
@@ -13,6 +28,33 @@
   --dc-muted:   #64748b;
   --background: var(--dc-bg);
   --foreground: var(--dc-text);
+  /* Keep Tailwind slate as dark */
+  --color-slate-50:  #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+}
+
+/* Light mode — invert the slate palette so bg-slate-800 becomes light */
+html:not(.dark) {
+  --color-slate-950: #f8fafc;
+  --color-slate-900: #f1f5f9;
+  --color-slate-800: #e2e8f0;
+  --color-slate-700: #cbd5e1;
+  --color-slate-600: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-400: #475569;
+  --color-slate-300: #334155;
+  --color-slate-200: #1e293b;
+  --color-slate-100: #0f172a;
+  --color-slate-50:  #020617;
 }
 
 @theme inline {
@@ -34,11 +76,11 @@ body {
 
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #1e2d45; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: #2d4060; }
+::-webkit-scrollbar-thumb { background: var(--dc-border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--dc-muted); }
 
-.prose-mail { color: #cbd5e1; font-size: 14px; line-height: 1.7; }
+.prose-mail { color: var(--dc-text); font-size: 14px; line-height: 1.7; }
 .prose-mail p { margin: 0.4em 0; }
-.prose-mail a { color: #60a5fa; text-decoration: underline; }
-.prose-mail blockquote { border-left: 3px solid #1e2d45; padding-left: 12px; color: #94a3b8; margin: 8px 0; }
-.prose-mail h1,.prose-mail h2,.prose-mail h3 { color: #f1f5f9; margin: 0.8em 0 0.3em; }
+.prose-mail a { color: var(--dc-blue); text-decoration: underline; }
+.prose-mail blockquote { border-left: 3px solid var(--dc-border); padding-left: 12px; color: var(--dc-muted); margin: 8px 0; }
+.prose-mail h1,.prose-mail h2,.prose-mail h3 { color: var(--dc-text); margin: 0.8em 0 0.3em; }

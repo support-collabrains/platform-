@@ -7,6 +7,8 @@ import Link from 'next/link';
 import { useT, useLang } from '../LangContext';
 import type { Lang } from '../lang';
 import { useApiRequest } from '@/hooks/use-api-request';
+import { useDarkMode } from '@/hooks/use-dark-mode';
+import { Sun, Moon } from 'lucide-react';
 
 interface Preferences {
   signal_doc_notify: boolean;
@@ -40,6 +42,7 @@ function FieldSkeleton() {
 export default function ProfileTab({ username, email, isAdmin }: { username: string; email: string; isAdmin: boolean }) {
   const t = useT();
   const { request } = useApiRequest();
+  const { dark, toggle: toggleDark } = useDarkMode();
   const [, setLang] = useLang();
   const [prefs, setPrefs] = useState<Preferences>({ signal_doc_notify: true, signal_digest_mode: false, language: 'nl' });
   const [saving, setSaving] = useState(false);
@@ -150,6 +153,27 @@ export default function ProfileTab({ username, email, isAdmin }: { username: str
                 <option value="en">🇬🇧 English</option>
               </select>
             )}
+          </div>
+        </div>
+
+        {/* Appearance */}
+        <div className="bg-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2">
+            <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Weergave</h3>
+          </div>
+          <div className="px-4 pb-4 flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm text-slate-200">Donker thema</p>
+              <p className="text-xs text-slate-500 mt-0.5">Schakel tussen licht en donker</p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleDark}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-sm text-slate-300 transition"
+            >
+              {dark ? <Sun size={14} /> : <Moon size={14} />}
+              {dark ? 'Licht' : 'Donker'}
+            </button>
           </div>
         </div>
 

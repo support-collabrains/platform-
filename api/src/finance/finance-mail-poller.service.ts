@@ -23,8 +23,8 @@ export class FinanceMailPollerService implements OnModuleInit, OnModuleDestroy {
     private readonly mail: MailImapService,
     private readonly config: ConfigService,
   ) {
-    this.authentikUrl = (typeof config?.get === 'function' ? config.get('AUTHENTIK_URL') : null) ?? 'http://authentik-server:9000';
-    this.authentikToken = (typeof config?.get === 'function' ? config.get('AUTHENTIK_BOOTSTRAP_TOKEN') : null) ?? '';
+    this.authentikUrl = config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
+    this.authentikToken = config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '';
   }
 
   onModuleInit() {
@@ -47,7 +47,9 @@ export class FinanceMailPollerService implements OnModuleInit, OnModuleDestroy {
       const users: Array<{ username: string; attributes?: Record<string, string> }> = data.results ?? [];
       for (const user of users) {
         if (user.attributes?.signalPhone) {
-          await this.scanUser(user.username, user.attributes).catch(() => {});
+          await this.scanUser(user.username, user.attributes ?? {}).catch(err =>
+            this.logger.warn(`scanUser ${user.username} mislukt: ${(err as Error).message}`)
+          );
         }
       }
     } catch (err) {
@@ -56,12 +58,9 @@ export class FinanceMailPollerService implements OnModuleInit, OnModuleDestroy {
   }
 
   async scanUser(username: string, attrs: Record<string, string>): Promise<void> {
-    const imap = this.mail.buildImapConfig(username, attrs);
-    if (!imap) return;
-
     try {
-      const messages = await this.mail.listMessages(imap, 'INBOX', 1, 50);
-      for (const msg of messages.messages ?? []) {
+      const result = await this.mail.getMessages(username, 'INBOX', 1, 50);
+      for (const msg of result.messages) {
         if (!this.isFinancialMail(msg.subject, msg.hasAttachment)) continue;
 
         const exists = await this.repo.findOne({
@@ -69,7 +68,7 @@ export class FinanceMailPollerService implements OnModuleInit, OnModuleDestroy {
         });
         if (exists) continue;
 
-        const detail = await this.mail.getMessage(imap, 'INBOX', msg.uid).catch(() => null);
+        const detail = await this.mail.getMessage(username, 'INBOX', msg.uid).catch(() => null);
         if (!detail) continue;
 
         const text = detail.bodyText || detail.bodyHtml?.replace(/<[^>]+>/g, ' ') || msg.subject;
@@ -78,14 +77,14 @@ export class FinanceMailPollerService implements OnModuleInit, OnModuleDestroy {
 
         await this.repo.save({
           owner: username,
-          source: 'mail',
+          source: 'mail' as const,
           sourceRef: String(msg.uid),
           leverancier: extracted.leverancier,
           bedrag: extracted.bedrag,
           datum: extracted.datum,
           categorie: extracted.categorie,
           type: extracted.type,
-          status: 'pending',
+          status: 'pending' as const,
         });
         this.logger.log(`Finance: mail transactie voor ${username} — ${extracted.leverancier}`);
       }

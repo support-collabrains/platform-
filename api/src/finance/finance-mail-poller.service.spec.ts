@@ -4,7 +4,8 @@ describe('FinanceMailPollerService', () => {
   let service: FinanceMailPollerService;
 
   beforeEach(() => {
-    service = new FinanceMailPollerService({} as never, {} as never, {} as never, {} as never);
+    const mockConfig = { get: jest.fn().mockReturnValue(undefined) };
+    service = new FinanceMailPollerService({} as never, {} as never, {} as never, mockConfig as never);
   });
 
   describe('isFinancialMail()', () => {

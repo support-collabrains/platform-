@@ -32,6 +32,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/dashboard/calendar':  'Agenda',
   '/dashboard/contacts':  'Contacten',
   '/dashboard/tasks':     'Taken',
+  '/dashboard/finance':   'Financiën',
   '/dashboard/assistant': 'AI Assistent',
   '/dashboard/profile':   'Profiel',
   '/dashboard/admin':     'Beheer',

@@ -23,6 +23,7 @@ import { GatewayModule } from './gateway/gateway.module';
 import { AiModule } from './ai/ai.module';
 import { ProactiveModule } from './proactive/proactive.module';
 import { ProactiveHint } from './proactive/proactive-hint.entity';
+import { FinanceTransaction, FinanceSubscription } from './finance/finance.entity';
 
 @Module({
   imports: [
@@ -33,7 +34,7 @@ import { ProactiveHint } from './proactive/proactive-hint.entity';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary, SignalTicket, AuditEvent, PushSubscription, ProactiveHint],
+        entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary, SignalTicket, AuditEvent, PushSubscription, ProactiveHint, FinanceTransaction, FinanceSubscription],
         synchronize: true,
         ssl: config.get('DATABASE_SSL') === 'true' ? { rejectUnauthorized: false } : false,
       }),

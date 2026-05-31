@@ -3,6 +3,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw, Trash2, Pencil, X, Send } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { useT } from '../LangContext';
 
 interface FolderStat { name: string; unread: number }
@@ -289,22 +290,24 @@ export default function MailClient() {
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="shrink-0 flex items-center justify-center gap-6 py-2.5 border-t border-slate-800">
-              <button
-                disabled={page <= 1}
+            <div className="shrink-0 flex items-center justify-center gap-4 py-2.5 border-t border-slate-800">
+              <Button
                 onClick={() => setPage(p => p - 1)}
-                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 p-1 transition"
+                disabled={page <= 1}
+                variant="ghost"
+                size="sm"
               >
                 <ChevronLeft size={16} />
-              </button>
+              </Button>
               <span className="text-xs text-slate-500">{page} / {totalPages}</span>
-              <button
-                disabled={page >= totalPages}
+              <Button
                 onClick={() => setPage(p => p + 1)}
-                className="text-slate-400 hover:text-slate-200 disabled:opacity-30 p-1 transition"
+                disabled={page >= totalPages}
+                variant="ghost"
+                size="sm"
               >
                 <ChevronRight size={16} />
-              </button>
+              </Button>
             </div>
           )}
         </div>

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Calendar, Plus, Clock, MapPin, RefreshCw, AlertCircle } from 'lucide-react';
 import { useT } from '../LangContext';
 import { useApiRequest } from '@/hooks/use-api-request';
+import { Button } from '@/components/ui/button';
 
 interface CalEvent {
   uid: string;
@@ -81,13 +82,15 @@ export default function CalendarClient() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="p-4 space-y-4">
-        <button
+        <Button
           onClick={() => setShowForm(!showForm)}
-          className="w-full flex items-center justify-center gap-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 rounded-2xl py-3 text-sm font-medium transition active:scale-95"
+          variant="secondary"
+          size="md"
+          className="w-full border-cyan-500/20 text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20"
         >
           <Plus size={16} />
           {t.calendarAdd}
-        </button>
+        </Button>
 
         {showForm && (
           <div className="bg-slate-800 rounded-2xl p-4 space-y-3">
@@ -108,9 +111,15 @@ export default function CalendarClient() {
               </div>
             )}
             <input className="w-full bg-slate-700 text-slate-100 rounded-xl px-3 py-2 text-sm placeholder:text-slate-500 outline-none focus:ring-1 focus:ring-cyan-500" placeholder="Locatie (optioneel)" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
-            <button onClick={() => void save()} disabled={saving || !form.summary || !form.start} className="w-full bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-900 font-semibold rounded-xl py-2.5 text-sm transition active:scale-95">
+            <Button
+              onClick={() => void save()}
+              variant="primary"
+              size="md"
+              disabled={saving || !form.summary || !form.start}
+              className="w-full"
+            >
               {saving ? t.saving : t.calendarAdd}
-            </button>
+            </Button>
           </div>
         )}
 
@@ -127,9 +136,9 @@ export default function CalendarClient() {
           <div className="flex flex-col items-center py-12 text-slate-600 gap-3">
             <AlertCircle size={32} className="opacity-40" />
             <p className="text-sm">Agenda niet beschikbaar</p>
-            <button onClick={load} className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm transition">
+            <Button onClick={load} variant="secondary" size="sm">
               <RefreshCw size={14} />{t.errorRetry}
-            </button>
+            </Button>
           </div>
         ) : groups.length === 0 ? (
           <div className="flex flex-col items-center py-12 text-slate-600">

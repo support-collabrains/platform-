@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { CheckCircle2, Trash2, Clock, AlertCircle, PlusCircle, RefreshCw } from 'lucide-react';
 import { useT } from '../LangContext';
 import { useApiRequest } from '@/hooks/use-api-request';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 
 interface Ticket {
   id: string;
@@ -73,6 +75,7 @@ export default function TasksClient() {
           <div className="bg-red-950/40 border border-red-800/40 rounded-2xl px-4 py-3 flex items-center gap-3">
             <AlertCircle size={18} className="text-red-400 shrink-0" />
             <span className="text-sm text-red-300">{overdue} {t.tasksOverdue}</span>
+            <Badge variant="error" className="ml-auto">{overdue}</Badge>
           </div>
         )}
 
@@ -98,9 +101,9 @@ export default function TasksClient() {
           <div className="flex flex-col items-center py-12 text-slate-600 gap-3">
             <AlertCircle size={32} className="opacity-40" />
             <p className="text-sm">{t.errorServiceUnavailable}</p>
-            <button onClick={load} className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm transition">
+            <Button onClick={load} variant="secondary" size="sm">
               <RefreshCw size={14} />{t.errorRetry}
-            </button>
+            </Button>
           </div>
         ) : current.length === 0 ? (
           <div className="flex flex-col items-center py-12 text-slate-600">

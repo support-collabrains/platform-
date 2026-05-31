@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { ChevronRight, FileText, FolderOpen, Folder, Search, List, GitBranch, Tag, X, RefreshCw, AlertCircle, Upload, CheckCircle } from 'lucide-react';
 import { useT } from '../LangContext';
 import { useApiRequest } from '@/hooks/use-api-request';
+import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 
 interface Doc {
   id: number;
@@ -149,23 +151,24 @@ export default function DocsPage() {
     return (
       <div className="space-y-2">
         {items.map(doc => (
-          <button
+          <Card
             key={doc.id}
-            type="button"
             onClick={() => router.push(`/dashboard/docs/${doc.id}`)}
-            className="w-full flex items-center gap-3 bg-slate-800 rounded-2xl p-4 hover:bg-slate-700/80 active:scale-[0.98] transition group text-left"
+            className="p-4"
           >
-            <div className="w-10 h-10 bg-slate-700 group-hover:bg-slate-600 rounded-xl flex items-center justify-center shrink-0 transition">
-              <FileText size={18} className="text-slate-400" />
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-slate-700 rounded-xl flex items-center justify-center shrink-0">
+                <FileText size={18} className="text-slate-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-100 truncate">{doc.title}</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {new Date(doc.created).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
+                </p>
+              </div>
+              <ChevronRight size={15} className="text-slate-600 shrink-0" />
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-100 truncate">{doc.title}</p>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {new Date(doc.created).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}
-              </p>
-            </div>
-            <ChevronRight size={15} className="text-slate-600 group-hover:text-slate-400 transition shrink-0" />
-          </button>
+          </Card>
         ))}
       </div>
     );
@@ -225,13 +228,10 @@ export default function DocsPage() {
       <div className="flex flex-col items-center justify-center h-full gap-4 p-8">
         <AlertCircle size={36} className="text-red-400 opacity-60" />
         <p className="text-sm text-slate-400">Paperless niet bereikbaar</p>
-        <button
-          onClick={load}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-sm transition"
-        >
+        <Button onClick={load} variant="secondary" size="sm">
           <RefreshCw size={14} />
           {t.errorRetry}
-        </button>
+        </Button>
       </div>
     );
   }

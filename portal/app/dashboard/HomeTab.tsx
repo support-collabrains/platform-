@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useT } from './LangContext';
 import { useApiRequest } from '@/hooks/use-api-request';
 import ProactiveHints from './ProactiveHints';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 interface Notification {
   id: string;
@@ -111,22 +113,28 @@ export default function HomeTab({ username }: { username: string }) {
 
         {/* Stats row */}
         <div className="grid grid-cols-2 gap-3">
-          <Link href="/dashboard/docs" className="bg-slate-800 rounded-2xl p-4 text-center hover:bg-slate-700/80 active:scale-95 transition">
-            <div className="text-2xl font-bold text-cyan-400">{loading ? '—' : docCount}</div>
-            <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statDocs}</div>
+          <Link href="/dashboard/docs">
+            <Card className="p-4 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
+              <div className="text-2xl font-bold text-cyan-400">{loading ? '—' : docCount}</div>
+              <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statDocs}</div>
+            </Card>
           </Link>
-          <Link href="/dashboard/mail" className="bg-slate-800 rounded-2xl p-4 text-center hover:bg-slate-700/80 active:scale-95 transition">
-            <div className="text-2xl font-bold text-blue-400">{loading ? '—' : unreadMail}</div>
-            <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statMail}</div>
+          <Link href="/dashboard/mail">
+            <Card className="p-4 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
+              <div className="text-2xl font-bold text-blue-400">{loading ? '—' : unreadMail}</div>
+              <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statMail}</div>
+            </Card>
           </Link>
-          <Link href="/dashboard/tasks" className="bg-slate-800 rounded-2xl p-4 text-center hover:bg-slate-700/80 active:scale-95 transition">
-            <div className="text-2xl font-bold text-emerald-400">{loading ? '—' : openTasks}</div>
-            <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statTasks}</div>
+          <Link href="/dashboard/tasks">
+            <Card className="p-4 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
+              <div className="text-2xl font-bold text-emerald-400">{loading ? '—' : openTasks}</div>
+              <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statTasks}</div>
+            </Card>
           </Link>
-          <div className="bg-slate-800 rounded-2xl p-4 text-center">
+          <Card className="p-4 text-center">
             <div className="text-2xl font-bold text-orange-400">{loading ? '—' : pending}</div>
             <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statProcessing}</div>
-          </div>
+          </Card>
         </div>
 
         {/* Proactive hints from Diggi */}
@@ -203,7 +211,9 @@ export default function HomeTab({ username }: { username: string }) {
                     <Icon size={16} className={`${cfg.color} mt-0.5 shrink-0`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-100 truncate">{n.documentTitle}</p>
-                      <p className={`text-xs mt-0.5 ${cfg.color}`}>{cfg.label}</p>
+                      <Badge variant={n.status === 'done' ? 'success' : n.status === 'failed' ? 'error' : n.status === 'processing' ? 'warning' : 'default'} className="mt-0.5">
+                        {cfg.label}
+                      </Badge>
                     </div>
                     <span className="text-xs text-slate-600 whitespace-nowrap shrink-0">{timeAgo(n.createdAt)}</span>
                   </div>

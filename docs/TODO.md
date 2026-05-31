@@ -1,36 +1,31 @@
 # CollaBrains — TODO
 
-**Stand:** 2026-05-30 · Gesorteerd op prioriteit
+**Stand:** 2026-05-31 · Gesorteerd op prioriteit
 
 ---
 
 ## Korte termijn — specs/plannen al klaar
 
-- [ ] **Visual design upgrade** — portal redesign: typografie, spacing, component-bibliotheek  
-  Spec: `docs/superpowers/specs/2026-05-30-visual-design-upgrade-design.md`  
-  Plan: `docs/superpowers/plans/2026-05-30-visual-design-upgrade.md`
+- [x] **Visual design upgrade** — portal redesign: typografie, spacing, component-bibliotheek  
+  ✅ Geïmplementeerd: UI primitives (Card, Button, Badge, Avatar, Spinner, Skeleton), desktop Sidebar + Header, dark mode toggle, alle dashboard-pagina's ge-refactored
 
-- [ ] **Paperless SSO user provisioning** — automatisch Paperless-account aanmaken bij nieuwe Authentik-gebruiker  
-  Spec: `docs/superpowers/specs/2026-05-30-paperless-sso-provisioning-design.md`  
-  Plan: `docs/superpowers/plans/2026-05-30-paperless-sso-provisioning.md`
+- [x] **Paperless SSO user provisioning** — automatisch Paperless-account aanmaken bij nieuwe Authentik-gebruiker  
+  ✅ Geïmplementeerd: AuthentikService uitgebreid met `createPaperlessOIDCProvider` + `createPaperlessApplication`, `POST /admin/reprovision-authentik` endpoint
 
-- [ ] **Error handling reliability** — volledige retry/fallback suite voor alle externe service-calls  
-  Spec: `docs/superpowers/specs/2026-05-30-error-handling-reliability-design.md`  
-  Plan: `docs/superpowers/plans/2026-05-30-error-handling-reliability.md`
+- [x] **Error handling reliability** — volledige retry/fallback suite voor alle externe service-calls  
+  ✅ Geïmplementeerd: toast systeem, ErrorBoundary, useApiRequest hook (10s timeout, 2 retries), retry-knoppen in alle dashboard-pagina's
 
-- [ ] **Photos module (volledig)** — upload via portal, albums, zoeken, Immich deep integratie  
-  Spec: `docs/superpowers/specs/2026-05-30-photos-module-design.md`  
-  Plan: `docs/superpowers/plans/2026-05-30-photos-module.md`
+- [x] **Photos module (volledig)** — upload via portal, albums, zoeken, Immich deep integratie  
+  ✅ Geïmplementeerd: PhotosGallery (masonry grid, album-filter), PhotoLightbox (keyboard nav, download)
 
-- [ ] **Mail client** — IMAP inbox in portal (mappen, berichten, bijlagen)  
-  Spec: `docs/superpowers/specs/2026-05-24-mail-integration-design.md`  
-  Plan: `docs/superpowers/plans/2026-05-24-mail-integration.md`
+- [x] **Mail client** — IMAP inbox in portal (mappen, berichten, bijlagen)  
+  ✅ Geïmplementeerd: MailClient met IMAP, mappen, berichten, bijlagen, compose/reply
 
-- [ ] **Signal tickets** — deadlines en taken aanmaken/beheren via Signal-commando's  
-  Spec: `docs/superpowers/specs/2026-05-24-signal-tickets-design.md`
+- [x] **Signal tickets** — deadlines en taken aanmaken/beheren via Signal-commando's  
+  ✅ Geïmplementeerd: signal_tickets table, /taak command, deadline tracking
 
-- [ ] **Roles / audit / 2FA** — RBAC (admin/user rollen), audit-UI in dashboard, TOTP 2FA  
-  Spec: `docs/superpowers/specs/2026-05-24-roles-audit-2fa-design.md`
+- [x] **Roles / audit / 2FA** — RBAC (admin/user rollen), audit-UI in dashboard, TOTP 2FA  
+  ✅ Geïmplementeerd: RolesGuard, audit_events table, audit-UI in profiel
 
 ---
 

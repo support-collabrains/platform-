@@ -126,6 +126,25 @@ const nl = {
   errorRetry: 'Opnieuw proberen',
   errorServiceUnavailable: 'Service niet beschikbaar',
   errorLoading: 'Fout bij laden',
+  // Finance
+  financeTitle: 'Financiën',
+  financeThisMonth: 'Uitgaven deze maand',
+  financeSubscriptions: 'Abonnementen',
+  financeMonthlyTotal: 'Maandlast',
+  financePending: 'Te controleren',
+  financeApprove: 'Goedkeuren',
+  financeReject: 'Afwijzen',
+  financeAddTransaction: 'Transactie toevoegen',
+  financeAddSubscription: 'Abonnement toevoegen',
+  financeNoTransactions: 'Geen transacties',
+  financeNoSubscriptions: 'Geen abonnementen',
+  financeAlertDeadline: 'Opzegtermijn nadert',
+  financeSave: 'Opslaan',
+  financeCancel: 'Annuleren',
+  financeCategories: 'Categorieën',
+  financeAll: 'Alle',
+  financePendingTab: 'Te controleren',
+  financeSubscriptionsTab: 'Abonnementen',
 };
 
 const de: typeof nl = {
@@ -243,6 +262,25 @@ const de: typeof nl = {
   errorRetry: 'Erneut versuchen',
   errorServiceUnavailable: 'Dienst nicht verfügbar',
   errorLoading: 'Fehler beim Laden',
+  // Finance
+  financeTitle: 'Finanzen',
+  financeThisMonth: 'Ausgaben diesen Monat',
+  financeSubscriptions: 'Abonnements',
+  financeMonthlyTotal: 'Monatliche Last',
+  financePending: 'Zu prüfen',
+  financeApprove: 'Genehmigen',
+  financeReject: 'Ablehnen',
+  financeAddTransaction: 'Transaktion hinzufügen',
+  financeAddSubscription: 'Abonnement hinzufügen',
+  financeNoTransactions: 'Keine Transaktionen',
+  financeNoSubscriptions: 'Keine Abonnements',
+  financeAlertDeadline: 'Kündigungsfrist naht',
+  financeSave: 'Speichern',
+  financeCancel: 'Abbrechen',
+  financeCategories: 'Kategorien',
+  financeAll: 'Alle',
+  financePendingTab: 'Zu prüfen',
+  financeSubscriptionsTab: 'Abonnements',
 };
 
 const en: typeof nl = {
@@ -360,6 +398,25 @@ const en: typeof nl = {
   errorRetry: 'Try again',
   errorServiceUnavailable: 'Service unavailable',
   errorLoading: 'Error loading',
+  // Finance
+  financeTitle: 'Finance',
+  financeThisMonth: 'Expenses this month',
+  financeSubscriptions: 'Subscriptions',
+  financeMonthlyTotal: 'Monthly total',
+  financePending: 'To review',
+  financeApprove: 'Approve',
+  financeReject: 'Reject',
+  financeAddTransaction: 'Add transaction',
+  financeAddSubscription: 'Add subscription',
+  financeNoTransactions: 'No transactions',
+  financeNoSubscriptions: 'No subscriptions',
+  financeAlertDeadline: 'Cancellation deadline approaching',
+  financeSave: 'Save',
+  financeCancel: 'Cancel',
+  financeCategories: 'Categories',
+  financeAll: 'All',
+  financePendingTab: 'To review',
+  financeSubscriptionsTab: 'Subscriptions',
 };
 
 export const translations: Record<Lang, typeof nl> = { nl, de, en };

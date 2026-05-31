@@ -26,26 +26,16 @@ export class CalendarService {
   }
 
   async ensureCollection(username: string): Promise<void> {
-    const url = this.collectionUrl(username);
+    const homeUrl = `${this.baseUrl}/${username.toLowerCase()}/`;
+    const calUrl = this.collectionUrl(username);
+    const opts = { validateStatus: (s: number) => s < 500 };
     try {
-      await axios.request({
-        method: 'MKCOL',
-        url,
-        headers: {
-          'Content-Type': 'application/xml; charset=utf-8',
-        },
-        data: `<?xml version="1.0" encoding="utf-8" ?>
-<C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-  <D:set><D:prop>
-    <D:displayname>CollaBrains</D:displayname>
-    <C:calendar-description>CollaBrains agenda</C:calendar-description>
-    <C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set>
-  </D:prop></D:set>
-</C:mkcalendar>`,
-        validateStatus: (s: number) => s < 500,
-      });
+      // Step 1: create user home collection (required parent before MKCALENDAR)
+      await axios.request({ method: 'MKCOL', url: homeUrl, headers: { 'Content-Type': 'application/xml; charset=utf-8' }, data: `<?xml version="1.0" encoding="utf-8" ?><D:mkcol xmlns:D="DAV:"><D:set><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:set></D:mkcol>`, ...opts });
+      // Step 2: create calendar collection
+      await axios.request({ method: 'MKCALENDAR', url: calUrl, headers: { 'Content-Type': 'application/xml; charset=utf-8' }, data: `<?xml version="1.0" encoding="utf-8" ?><C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"><D:set><D:prop><D:displayname>CollaBrains</D:displayname><C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set></D:prop></D:set></C:mkcalendar>`, ...opts });
     } catch {
-      // ignore — collection may already exist
+      // ignore — collections may already exist
     }
   }
 
@@ -95,8 +85,17 @@ export class CalendarService {
     const ical = this.buildIcal({ ...event, uid });
     await axios.put(url, ical, {
       headers: { 'Content-Type': 'text/calendar; charset=utf-8' },
+      validateStatus: (s: number) => s < 500,
     });
     return uid;
+  }
+
+  private fmtIcal(dateStr: string, allDay: boolean): string {
+    const [datePart, timePart = '000000'] = dateStr.split('T');
+    const d = datePart.replace(/-/g, '');
+    if (allDay) return d.slice(0, 8);
+    const t = timePart.replace(/:/g, '').slice(0, 6).padEnd(6, '0');
+    return `${d}T${t}`;
   }
 
   private buildIcal(event: CalEvent): string {
@@ -107,8 +106,8 @@ export class CalendarService {
       'BEGIN:VEVENT',
       `UID:${event.uid}`,
       `SUMMARY:${event.summary}`,
-      `DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${event.start.replace(/[-:T]/g, '').slice(0, event.allDay ? 8 : 15)}`,
-      `DTEND${event.allDay ? ';VALUE=DATE' : ''}:${event.end.replace(/[-:T]/g, '').slice(0, event.allDay ? 8 : 15)}`,
+      `DTSTART${event.allDay ? ';VALUE=DATE' : ''}:${this.fmtIcal(event.start, event.allDay)}`,
+      `DTEND${event.allDay ? ';VALUE=DATE' : ''}:${this.fmtIcal(event.end, event.allDay)}`,
     ];
     if (event.location) lines.push(`LOCATION:${event.location}`);
     if (event.description) lines.push(`DESCRIPTION:${event.description}`);
@@ -140,13 +139,20 @@ export class CalendarService {
     if (!summary || !dtstart) return null;
 
     const parseDate = (raw: string): { iso: string; allDay: boolean } => {
-      const cleaned = raw.replace(/[;=A-Z-]+VALUE=DATE:/, '').replace(/[;=A-Z]+:/, ':');
-      const d = cleaned.includes(':') ? cleaned.split(':')[1] : cleaned;
-      const allDay = d.length === 8;
-      const iso = allDay
-        ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`
-        : `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}T${d.slice(9, 11)}:${d.slice(11, 13)}:${d.slice(13, 15)}Z`;
-      return { iso, allDay };
+      // Strip property name and parameters (e.g. "DTSTART;VALUE=DATE:"), keep only the value
+      const val = raw.includes(':') ? raw.split(':').slice(1).join(':').trim() : raw.trim();
+      // Remove trailing timezone suffix like Z or timezone identifiers
+      const d = val.replace(/Z$/, '');
+      const allDay = d.length === 8 || d.indexOf('T') === -1;
+      if (allDay) {
+        const date = d.slice(0, 8);
+        return { iso: `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}`, allDay: true };
+      }
+      const tIdx = d.indexOf('T');
+      const datePart = d.slice(0, tIdx);
+      const timePart = d.slice(tIdx + 1);
+      const iso = `${datePart.slice(0, 4)}-${datePart.slice(4, 6)}-${datePart.slice(6, 8)}T${timePart.slice(0, 2)}:${timePart.slice(2, 4)}:${timePart.slice(4, 6)}`;
+      return { iso, allDay: false };
     };
 
     const { iso: start, allDay } = parseDate(dtstart);

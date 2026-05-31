@@ -26,23 +26,16 @@ export class ContactsService {
   }
 
   async ensureAddressbook(username: string): Promise<void> {
-    const url = this.addressbookUrl(username);
+    const homeUrl = `${this.baseUrl}/${encodeURIComponent(username)}/`;
+    const abUrl = this.addressbookUrl(username);
+    const opts = { validateStatus: (s: number) => s < 500 };
     try {
-      await axios.request({
-        method: 'MKCOL',
-        url,
-        headers: { 'Content-Type': 'application/xml; charset=utf-8' },
-        data: `<?xml version="1.0" encoding="utf-8" ?>
-<D:mkcol xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
-  <D:set><D:prop>
-    <D:resourcetype><D:collection/><CR:addressbook/></D:resourcetype>
-    <D:displayname>Contacts</D:displayname>
-  </D:prop></D:set>
-</D:mkcol>`,
-        validateStatus: (s: number) => s < 500,
-      });
+      // Step 1: create user home collection (required parent)
+      await axios.request({ method: 'MKCOL', url: homeUrl, headers: { 'Content-Type': 'application/xml; charset=utf-8' }, data: `<?xml version="1.0" encoding="utf-8" ?><D:mkcol xmlns:D="DAV:"><D:set><D:prop><D:resourcetype><D:collection/></D:resourcetype></D:prop></D:set></D:mkcol>`, ...opts });
+      // Step 2: create addressbook collection
+      await axios.request({ method: 'MKCOL', url: abUrl, headers: { 'Content-Type': 'application/xml; charset=utf-8' }, data: `<?xml version="1.0" encoding="utf-8" ?><D:mkcol xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav"><D:set><D:prop><D:resourcetype><D:collection/><CR:addressbook/></D:resourcetype><D:displayname>Contacts</D:displayname></D:prop></D:set></D:mkcol>`, ...opts });
     } catch {
-      // collection may already exist — ignore
+      // ignore — collections may already exist
     }
   }
 
@@ -52,16 +45,17 @@ export class ContactsService {
 
     try {
       const { data } = await axios.request<string>({
-        method: 'PROPFIND',
+        method: 'REPORT',
         url,
         headers: {
           'Content-Type': 'application/xml; charset=utf-8',
           Depth: '1',
         },
         data: `<?xml version="1.0" encoding="utf-8" ?>
-<D:propfind xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
+<CR:addressbook-query xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
   <D:prop><D:getetag/><CR:address-data/></D:prop>
-</D:propfind>`,
+  <CR:filter/>
+</CR:addressbook-query>`,
         responseType: 'text',
         validateStatus: (s: number) => s < 500,
       });
@@ -81,6 +75,7 @@ export class ContactsService {
 
     await axios.put(url, vcard, {
       headers: { 'Content-Type': 'text/vcard; charset=utf-8' },
+      validateStatus: (s: number) => s < 500,
     });
     return uid;
   }

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Home, Mail, FileText, User, CheckSquare, Calendar,
-  Camera, Bot, BookUser, Shield, LogOut, ChevronRight,
+  Camera, Bot, BookUser, Shield, LogOut, ChevronRight, Euro,
 } from 'lucide-react';
 import Logo from '@/components/Logo';
 import { Avatar } from '@/components/ui/avatar';
@@ -25,6 +25,7 @@ const NAV = [
   { href: '/dashboard/calendar',  icon: Calendar,    label: 'Agenda' },
   { href: '/dashboard/contacts',  icon: BookUser,    label: 'Contacten' },
   { href: '/dashboard/tasks',     icon: CheckSquare, label: 'Taken',      badge: 'tasks' as const },
+  { href: '/dashboard/finance',   icon: Euro,        label: 'Financiën' },
   { href: '/dashboard/assistant', icon: Bot,         label: 'AI Assistent' },
   { href: '/dashboard/profile',   icon: User,        label: 'Profiel' },
 ];

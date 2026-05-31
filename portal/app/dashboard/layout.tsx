@@ -5,6 +5,7 @@ import Sidebar from '@/components/layout/Sidebar';
 import Header from '@/components/layout/Header';
 import { Toaster } from '@/components/ui/toast';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
+import { AssistantProvider } from './AssistantProvider';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const hdrs = await headers();
@@ -14,7 +15,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const logoutUrl = process.env.NEXT_PUBLIC_LOGOUT_URL ?? '/outpost.goauthentik.io/sign_out';
 
   return (
-    <>
+    <AssistantProvider>
       {/* ── Desktop layout (≥ md) ──────────────────────────────────────────── */}
       <div className="hidden md:flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
         <Sidebar username={username} unreadMail={0} openTasks={0} logoutUrl={logoutUrl} isAdmin={isAdmin} />
@@ -38,6 +39,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </div>
 
       <Toaster />
-    </>
+    </AssistantProvider>
   );
 }

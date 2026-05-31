@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Headers, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { AiService } from './ai.service';
 
 @Controller('ai')
@@ -11,6 +12,15 @@ export class AiController {
     @Body() body: { messages: { role: string; content: string }[]; context?: string },
   ): Promise<{ reply: string; model: string }> {
     return this.ai.chat(username ?? 'unknown', body.messages ?? [], body.context);
+  }
+
+  @Post('chat/stream')
+  async chatStream(
+    @Headers('x-authentik-username') username: string,
+    @Body() body: { messages: { role: string; content: string }[]; context?: string },
+    @Res() res: Response,
+  ): Promise<void> {
+    await this.ai.chatStream(username ?? 'unknown', body.messages ?? [], body.context, res);
   }
 
   @Get('models')

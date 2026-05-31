@@ -31,7 +31,7 @@ export const DOCUMENT_TYPES = [
 @Injectable()
 export class OllamaService {
   private readonly logger = new Logger(OllamaService.name);
-  private readonly url: string;
+  readonly url: string;
   readonly model: string;
 
   constructor(private readonly config: ConfigService) {

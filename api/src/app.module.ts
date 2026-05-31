@@ -21,6 +21,8 @@ import { PushModule } from './push/push.module';
 import { PushSubscription } from './push/push-subscription.entity';
 import { GatewayModule } from './gateway/gateway.module';
 import { AiModule } from './ai/ai.module';
+import { ProactiveModule } from './proactive/proactive.module';
+import { ProactiveHint } from './proactive/proactive-hint.entity';
 
 @Module({
   imports: [
@@ -31,7 +33,7 @@ import { AiModule } from './ai/ai.module';
       useFactory: (config: ConfigService) => ({
         type: 'postgres',
         url: config.get<string>('DATABASE_URL'),
-        entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary, SignalTicket, AuditEvent, PushSubscription],
+        entities: [OnboardingEvent, DocDocument, DocNotification, DocSummary, SignalTicket, AuditEvent, PushSubscription, ProactiveHint],
         synchronize: true,
         ssl: config.get('DATABASE_SSL') === 'true' ? { rejectUnauthorized: false } : false,
       }),
@@ -50,6 +52,7 @@ import { AiModule } from './ai/ai.module';
     PushModule,
     GatewayModule,
     AiModule,
+    ProactiveModule,
   ],
 })
 export class AppModule {}

@@ -5,6 +5,7 @@ import { Bell, CheckCircle, Clock, XCircle, Calendar, Camera, RefreshCw, AlertCi
 import Link from 'next/link';
 import { useT } from './LangContext';
 import { useApiRequest } from '@/hooks/use-api-request';
+import ProactiveHints from './ProactiveHints';
 
 interface Notification {
   id: string;
@@ -127,6 +128,9 @@ export default function HomeTab({ username }: { username: string }) {
             <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statProcessing}</div>
           </div>
         </div>
+
+        {/* Proactive hints from Diggi */}
+        <ProactiveHints />
 
         {/* Today's agenda — always show section */}
         <div>

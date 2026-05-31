@@ -1,6 +1,6 @@
-import { Controller, ForbiddenException, Get, Headers, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, ForbiddenException, Get, Headers, Post, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import axios from 'axios';
 import { InternalSecretGuard } from '../users-me/internal-secret.guard';
 
@@ -88,6 +88,32 @@ export class PaperlessProxyController {
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } })?.response?.status ?? 502;
       res.status(status).json({ error: 'Paperless proxy error' });
+    }
+  }
+
+  @Post('upload')
+  async upload(
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    try {
+      const upstream = await axios.post(
+        `${this.paperlessUrl}/api/documents/post_document/`,
+        req,
+        {
+          headers: {
+            Authorization: `Token ${this.paperlessToken}`,
+            'content-type': req.headers['content-type'] ?? 'multipart/form-data',
+          },
+          timeout: 60_000,
+          responseType: 'arraybuffer',
+          maxBodyLength: 50 * 1024 * 1024,
+        },
+      );
+      res.status(upstream.status).send(upstream.data);
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } })?.response?.status ?? 502;
+      res.status(status).json({ error: 'Upload mislukt' });
     }
   }
 }

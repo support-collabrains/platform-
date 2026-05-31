@@ -31,6 +31,7 @@ export default function HomeTab({ username }: { username: string }) {
   const [unreadMail, setUnreadMail] = useState(0);
   const [openTasks, setOpenTasks] = useState(0);
   const [todayEvents, setTodayEvents] = useState<CalEvent[]>([]);
+  const [financeThisMonth, setFinanceThisMonth] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
@@ -70,13 +71,19 @@ export default function HomeTab({ username }: { username: string }) {
       request<{ unread?: number }>('/api/me/mail/stats').catch(() => ({ unread: 0 })),
       request<{ tickets?: unknown[] }>('/api/me/tickets').catch(() => ({ tickets: [] })),
       request<{ events?: CalEvent[] }>(`/api/me/calendar/events?from=${encodeURIComponent(new Date().toISOString())}&to=${encodeURIComponent(tomorrow)}`).catch(() => ({ events: [] as CalEvent[] })),
-    ]).then(([notifData, docsData, mailData, ticketsData, calData]) => {
+      request<{ maandTotalen?: Array<{ maand: string; totaal: number }> }>('/api/me/finance/summary').catch(() => null),
+    ]).then(([notifData, docsData, mailData, ticketsData, calData, financeData]) => {
       setNotifications(notifData.notifications ?? []);
       setDocCount((docsData.docs ?? []).length);
       setUnreadMail(mailData.unread ?? 0);
       setOpenTasks((ticketsData.tickets ?? []).length);
       const allEvents = calData.events ?? [];
       setTodayEvents(allEvents.filter(ev => ev.start.slice(0, 10) === today));
+      if (financeData?.maandTotalen) {
+        const thisMonth = new Date().toISOString().slice(0, 7);
+        const monthData = financeData.maandTotalen.find(m => m.maand === thisMonth);
+        setFinanceThisMonth(monthData ? Number(monthData.totaal) : 0);
+      }
     }).catch(() => {
       setLoadError(true);
     }).finally(() => setLoading(false));
@@ -112,29 +119,37 @@ export default function HomeTab({ username }: { username: string }) {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Link href="/dashboard/docs">
-            <Card className="p-4 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
-              <div className="text-2xl font-bold text-cyan-400">{loading ? '—' : docCount}</div>
-              <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statDocs}</div>
+            <Card className="p-3 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
+              <div className="text-xl font-bold text-cyan-400">{loading ? '—' : docCount}</div>
+              <div className="text-[10px] text-slate-500 mt-1 leading-tight">{t.statDocs}</div>
             </Card>
           </Link>
           <Link href="/dashboard/mail">
-            <Card className="p-4 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
-              <div className="text-2xl font-bold text-blue-400">{loading ? '—' : unreadMail}</div>
-              <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statMail}</div>
+            <Card className="p-3 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
+              <div className="text-xl font-bold text-blue-400">{loading ? '—' : unreadMail}</div>
+              <div className="text-[10px] text-slate-500 mt-1 leading-tight">{t.statMail}</div>
             </Card>
           </Link>
           <Link href="/dashboard/tasks">
-            <Card className="p-4 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
-              <div className="text-2xl font-bold text-emerald-400">{loading ? '—' : openTasks}</div>
-              <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statTasks}</div>
+            <Card className="p-3 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
+              <div className="text-xl font-bold text-emerald-400">{loading ? '—' : openTasks}</div>
+              <div className="text-[10px] text-slate-500 mt-1 leading-tight">{t.statTasks}</div>
             </Card>
           </Link>
-          <Card className="p-4 text-center">
-            <div className="text-2xl font-bold text-orange-400">{loading ? '—' : pending}</div>
-            <div className="text-[11px] text-slate-500 mt-1 leading-tight">{t.statProcessing}</div>
+          <Card className="p-3 text-center">
+            <div className="text-xl font-bold text-orange-400">{loading ? '—' : pending}</div>
+            <div className="text-[10px] text-slate-500 mt-1 leading-tight">{t.statProcessing}</div>
           </Card>
+          <Link href="/dashboard/finance" className="col-span-2">
+            <Card className="p-3 text-center hover:bg-slate-700/80 active:scale-95 transition cursor-pointer">
+              <div className="text-xl font-bold text-emerald-300">
+                {loading ? '—' : financeThisMonth !== null ? `€${financeThisMonth.toFixed(0)}` : '—'}
+              </div>
+              <div className="text-[10px] text-slate-500 mt-1 leading-tight">{t.financeThisMonth}</div>
+            </Card>
+          </Link>
         </div>
 
         {/* Proactive hints from Diggi */}

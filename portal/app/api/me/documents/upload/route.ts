@@ -8,8 +8,8 @@ export async function POST(req: NextRequest) {
   const username = req.headers.get('x-authentik-username') ?? 'user';
   try {
     const formData = await req.formData();
-    // Relay multipart form to NestJS paperless gateway
-    const res = await fetch(`${PAPERLESS}/api/documents/post_document/`, {
+    // Relay multipart form to NestJS paperless gateway upload endpoint
+    const res = await fetch(`${PAPERLESS}/upload`, {
       method: 'POST',
       headers: {
         'x-authentik-username': username,

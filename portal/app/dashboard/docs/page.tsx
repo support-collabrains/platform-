@@ -105,8 +105,8 @@ export default function DocsPage() {
     ]).then(([docsData, treeData, typesData]) => {
       setDocs(docsData);
       setTree(treeData);
-      const userTypeIds = new Set(docsData.map(d => d.document_type).filter(Boolean));
-      setDocTypes(typesData.filter(ty => userTypeIds.has(ty.id)));
+      // Toon alle documenttypes (ook lege categorieën zodat gebruiker kan filteren)
+      setDocTypes(typesData);
     }).catch(() => {
       setLoadError(true);
     }).finally(() => setLoading(false));

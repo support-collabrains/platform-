@@ -15,7 +15,13 @@ export class FinanceAlertService {
   ) {}
 
   async checkUser(owner: string, signalPhone?: string): Promise<string[]> {
-    const subs = await this.repo.find({ where: { owner, actief: true } });
+    let subs: FinanceSubscription[];
+    try {
+      subs = await this.repo.find({ where: { owner, actief: true } });
+    } catch (err) {
+      this.logger.warn(`Finance alert DB query mislukt voor ${owner}: ${(err as Error).message}`);
+      return [];
+    }
     const upcoming = this.getUpcomingDeadlines(subs);
     const messages: string[] = [];
 
@@ -28,7 +34,7 @@ export class FinanceAlertService {
         : `⚠️ Abonnement ${sub.naam} (€${sub.bedrag}/mnd) — nog ${daysLeft} dag(en) om op te zeggen`;
       messages.push(msg);
       if (signalPhone) {
-        await this.notifications.send(signalPhone, msg).catch(() => {});
+        await this.notifications.sendToNumber(signalPhone, msg).catch(() => {});
       }
     }
     return messages;

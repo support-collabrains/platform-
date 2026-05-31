@@ -49,7 +49,7 @@ export class FinanceExtractorService {
         categorie: (parsed.categorie as FinanceCategorie) ?? 'Overig',
         type: parsed.type === 'abonnement' ? 'abonnement' : 'eenmalig',
         interval: parsed.interval,
-        opzegtermijn_dagen: parsed.opzegtermijn_dagen,
+        opzegtermijnDagen: (parsed as Record<string,unknown>)['opzegtermijn_dagen'] as number | undefined,
         confidence: parsed.confidence ?? 0.5,
       };
     } catch {

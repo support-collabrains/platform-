@@ -50,6 +50,6 @@ export interface ExtractedTransaction {
   categorie: FinanceCategorie;
   type: FinanceType;
   interval?: FinanceInterval;
-  opzegtermijn_dagen?: number;
+  opzegtermijnDagen?: number;
   confidence: number;
 }

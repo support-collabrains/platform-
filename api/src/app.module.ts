@@ -24,6 +24,7 @@ import { AiModule } from './ai/ai.module';
 import { ProactiveModule } from './proactive/proactive.module';
 import { ProactiveHint } from './proactive/proactive-hint.entity';
 import { FinanceTransaction, FinanceSubscription } from './finance/finance.entity';
+import { FinanceModule } from './finance/finance.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { FinanceTransaction, FinanceSubscription } from './finance/finance.entit
     GatewayModule,
     AiModule,
     ProactiveModule,
+    FinanceModule,
   ],
 })
 export class AppModule {}

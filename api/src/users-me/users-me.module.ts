@@ -8,9 +8,10 @@ import { TicketsModule } from '../tickets/tickets.module';
 import { AuditModule } from '../audit/audit.module';
 import { CalendarModule } from '../calendar/calendar.module';
 import { LdapModule } from '../ldap/ldap.module';
+import { FinanceModule } from '../finance/finance.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([DocDocument, DocNotification]), TicketsModule, AuditModule, CalendarModule, LdapModule],
+  imports: [TypeOrmModule.forFeature([DocDocument, DocNotification]), TicketsModule, AuditModule, CalendarModule, LdapModule, FinanceModule],
   providers: [UsersMeService, InternalSecretGuard],
   controllers: [UsersMeController],
 })

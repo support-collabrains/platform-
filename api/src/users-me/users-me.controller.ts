@@ -6,6 +6,8 @@ import { TicketsService } from '../tickets/tickets.service';
 import { AuditService } from '../audit/audit.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { LdapMetadataService } from '../ldap/ldap-metadata.service';
+import { FinanceService } from '../finance/finance.service';
+import { CreateTransactionDto, UpdateTransactionDto, CreateSubscriptionDto, UpdateSubscriptionDto } from '../finance/finance.dto';
 
 @Controller('users/me')
 @UseGuards(InternalSecretGuard)
@@ -16,6 +18,7 @@ export class UsersMeController {
     private readonly audit: AuditService,
     private readonly calendar: CalendarService,
     private readonly ldap: LdapMetadataService,
+    private readonly financeService: FinanceService,
   ) {}
 
   @Get('profile')
@@ -178,5 +181,64 @@ export class UsersMeController {
   @Get('ldap-profile')
   async getLdapProfile(@Headers('x-authentik-username') username: string) {
     return this.ldap.getAttributes(username);
+  }
+
+  // ── Finance ──────────────────────────────────────────────────────────────
+  @Get('finance/summary')
+  @UseGuards(InternalSecretGuard)
+  getFinanceSummary(@Headers('x-authentik-username') owner: string) {
+    return this.financeService.getSummary(owner);
+  }
+
+  @Get('finance/transactions')
+  @UseGuards(InternalSecretGuard)
+  getTransactions(
+    @Headers('x-authentik-username') owner: string,
+    @Query('status') status?: string,
+    @Query('categorie') categorie?: string,
+  ) {
+    return this.financeService.getTransactions(owner, status, categorie);
+  }
+
+  @Post('finance/transactions')
+  @UseGuards(InternalSecretGuard)
+  createTransaction(@Headers('x-authentik-username') owner: string, @Body() dto: CreateTransactionDto) {
+    return this.financeService.createTransaction(owner, dto);
+  }
+
+  @Patch('finance/transactions/:id')
+  @UseGuards(InternalSecretGuard)
+  updateTransaction(@Headers('x-authentik-username') owner: string, @Param('id') id: string, @Body() dto: UpdateTransactionDto) {
+    return this.financeService.updateTransaction(owner, id, dto);
+  }
+
+  @Delete('finance/transactions/:id')
+  @UseGuards(InternalSecretGuard)
+  deleteTransaction(@Headers('x-authentik-username') owner: string, @Param('id') id: string) {
+    return this.financeService.deleteTransaction(owner, id);
+  }
+
+  @Get('finance/subscriptions')
+  @UseGuards(InternalSecretGuard)
+  getSubscriptions(@Headers('x-authentik-username') owner: string) {
+    return this.financeService.getSubscriptions(owner);
+  }
+
+  @Post('finance/subscriptions')
+  @UseGuards(InternalSecretGuard)
+  createSubscription(@Headers('x-authentik-username') owner: string, @Body() dto: CreateSubscriptionDto) {
+    return this.financeService.createSubscription(owner, dto);
+  }
+
+  @Patch('finance/subscriptions/:id')
+  @UseGuards(InternalSecretGuard)
+  updateSubscription(@Headers('x-authentik-username') owner: string, @Param('id') id: string, @Body() dto: UpdateSubscriptionDto) {
+    return this.financeService.updateSubscription(owner, id, dto);
+  }
+
+  @Delete('finance/subscriptions/:id')
+  @UseGuards(InternalSecretGuard)
+  deleteSubscription(@Headers('x-authentik-username') owner: string, @Param('id') id: string) {
+    return this.financeService.deleteSubscription(owner, id);
   }
 }

@@ -1,6 +1,6 @@
 import {
   Column, CreateDateColumn, Entity,
-  PrimaryGeneratedColumn,
+  PrimaryGeneratedColumn, UpdateDateColumn,
 } from 'typeorm';
 
 export type FinanceSource = 'paperless' | 'mail' | 'manual';
@@ -53,6 +53,9 @@ export class FinanceTransaction {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }
 
 @Entity('finance_subscriptions')
@@ -86,4 +89,7 @@ export class FinanceSubscription {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
 }

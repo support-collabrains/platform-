@@ -15,7 +15,8 @@ export class CreateFinanceTables1780210909563 implements MigrationInterface {
         type VARCHAR(20) NOT NULL,
         status VARCHAR(20) NOT NULL DEFAULT 'pending',
         notes VARCHAR,
-        "createdAt" TIMESTAMP DEFAULT now()
+        "createdAt" TIMESTAMP DEFAULT now(),
+        "updatedAt" TIMESTAMP DEFAULT now()
       )
     `);
     await qr.query(`
@@ -29,7 +30,8 @@ export class CreateFinanceTables1780210909563 implements MigrationInterface {
         "volgendeBetaaldatum" DATE NOT NULL,
         "opzegtermijnDagen" INT NOT NULL DEFAULT 30,
         actief BOOLEAN NOT NULL DEFAULT true,
-        "createdAt" TIMESTAMP DEFAULT now()
+        "createdAt" TIMESTAMP DEFAULT now(),
+        "updatedAt" TIMESTAMP DEFAULT now()
       )
     `);
   }

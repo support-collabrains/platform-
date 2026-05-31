@@ -1,0 +1,117 @@
+services:
+
+  # ───────── EDGE ─────────
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+      - app
+
+  # ───────── AUTH ─────────
+  authentik-server:
+    image: ghcr.io/goauthentik/server:2024.6
+    restart: unless-stopped
+    command: server
+    networks:
+      - auth
+      - app
+    environment:
+      AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_BOOTSTRAP_TOKEN}
+
+  redis-authentik:
+    image: redis:7-alpine
+    networks: [auth]
+
+  postgresql-authentik:
+    image: postgres:16-alpine
+    networks: [auth]
+
+  # ───────── APP LAYER ─────────
+  api:
+    build: ./api
+    restart: unless-stopped
+    networks:
+      - app
+      - data
+      - auth
+    environment:
+      DATABASE_URL: postgresql://platform:${DB_PASSWORD}@postgres:5432/platform
+      AUTHENTIK_URL: http://authentik-server:9000
+      REDIS_URL: redis://redis-core:6379
+
+  portal:
+    build: ./portal
+    restart: unless-stopped
+    networks: [app]
+
+  # ───────── DATA LAYER ─────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [data]
+    environment:
+      POSTGRES_DB: platform
+      POSTGRES_USER: platform
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  redis-core:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks: [data]
+
+  # ───────── DOCUMENTS ─────────
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:latest
+    restart: unless-stopped
+    networks:
+      - app
+      - data
+      - auth
+    environment:
+      PAPERLESS_REDIS: redis://redis-core:6379
+      PAPERLESS_DBHOST: postgres
+      PAPERLESS_DBNAME: paperless
+      PAPERLESS_DBUSER: platform
+      PAPERLESS_DBPASS: ${DB_PASSWORD}
+
+  # ───────── MEDIA ─────────
+  immich-server:
+    image: ghcr.io/immich-app/immich-server:release
+    restart: unless-stopped
+    networks:
+      - app
+      - data
+
+  # ───────── AI LAYER ─────────
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    networks: [app]
+
+  paperless-gpt:
+    image: ghcr.io/icereed/paperless-gpt:latest
+    networks: [app]
+    depends_on:
+      - paperless
+      - ollama
+
+  # ───────── INTEGRATION ─────────
+  signal-api:
+    image: bbernhard/signal-cli-rest-api:latest
+    networks: [app]
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:	

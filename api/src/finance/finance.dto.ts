@@ -1,6 +1,6 @@
 import { FinanceCategorie, FinanceInterval, FinanceSource, FinanceStatus, FinanceType } from './finance.entity';
 
-export interface CreateTransactionDto {
+export class CreateTransactionDto {
   leverancier: string;
   bedrag: number;
   datum: string;
@@ -9,7 +9,7 @@ export interface CreateTransactionDto {
   notes?: string;
 }
 
-export interface UpdateTransactionDto {
+export class UpdateTransactionDto {
   leverancier?: string;
   bedrag?: number;
   datum?: string;
@@ -18,7 +18,7 @@ export interface UpdateTransactionDto {
   notes?: string;
 }
 
-export interface CreateSubscriptionDto {
+export class CreateSubscriptionDto {
   naam: string;
   bedrag: number;
   interval: FinanceInterval;
@@ -27,7 +27,7 @@ export interface CreateSubscriptionDto {
   transactionId?: string;
 }
 
-export interface UpdateSubscriptionDto {
+export class UpdateSubscriptionDto {
   naam?: string;
   bedrag?: number;
   interval?: FinanceInterval;

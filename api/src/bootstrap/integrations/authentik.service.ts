@@ -9,6 +9,8 @@ export interface AuthentikConfig {
   primaryDomain: string;
   oauthClientId: string;
   oauthClientSecret: string;
+  paperlessOidcClientId: string;
+  paperlessOidcClientSecret: string;
 }
 
 @Injectable()
@@ -40,6 +42,15 @@ export class AuthentikService {
 
     // Provision LDAP custom property mappings for platform-specific attributes
     await this.provisionLdapPropertyMappings(api);
+
+    // Provision Paperless-NGX OIDC SSO (non-fatal)
+    try {
+      const paperlessProviderId = await this.createPaperlessOIDCProvider(api, config);
+      await this.createPaperlessApplication(api, paperlessProviderId, config.primaryDomain);
+      this.logger.log('Paperless OIDC SSO provisioned');
+    } catch (err) {
+      this.logger.warn(`Paperless OIDC provisioning failed (non-fatal): ${(err as Error).message}`);
+    }
 
     this.logger.log('Authentik provisioning complete');
   }
@@ -199,5 +210,57 @@ export class AuthentikService {
     });
 
     this.logger.log('Created portal application in Authentik');
+  }
+
+  private async createPaperlessOIDCProvider(
+    api: ReturnType<typeof axios.create>,
+    config: AuthentikConfig,
+  ): Promise<number> {
+    const { data: existing } = await api.get('/api/v3/providers/oauth2/', {
+      params: { name: 'paperless-ngx' },
+    });
+    if (existing.pagination.count > 0) {
+      return existing.results[0].pk;
+    }
+
+    const authorizationFlow = await this.getAuthorizationFlowPk(api);
+
+    const { data: provider } = await api.post('/api/v3/providers/oauth2/', {
+      name: 'paperless-ngx',
+      authorization_flow: authorizationFlow,
+      client_id: config.paperlessOidcClientId,
+      client_secret: config.paperlessOidcClientSecret,
+      client_type: 'confidential',
+      redirect_uris: `https://docs.${config.primaryDomain}/accounts/oidc/paperless-authentik/login/callback/`,
+      sub_mode: 'hashed_user_id',
+      include_claims_in_id_token: true,
+      issuer_mode: 'global',
+    });
+
+    this.logger.log(`Created Paperless OIDC provider (pk=${provider.pk})`);
+    return provider.pk;
+  }
+
+  private async createPaperlessApplication(
+    api: ReturnType<typeof axios.create>,
+    providerId: number,
+    primaryDomain: string,
+  ): Promise<void> {
+    const { data: existing } = await api.get('/api/v3/core/applications/', {
+      params: { slug: 'paperless-ngx' },
+    });
+    if (existing.pagination.count > 0) {
+      this.logger.log('Paperless application already exists');
+      return;
+    }
+
+    await api.post('/api/v3/core/applications/', {
+      name: 'Paperless',
+      slug: 'paperless-ngx',
+      provider: providerId,
+      meta_launch_url: `https://docs.${primaryDomain}`,
+    });
+
+    this.logger.log('Created Paperless application in Authentik');
   }
 }

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { ADMIN_GROUP } from '../common/roles.guard';
 import { LdapMetadataService, LdapUserAttributes } from '../ldap/ldap-metadata.service';
+import { AuthentikService } from '../bootstrap/integrations/authentik.service';
 
 @Injectable()
 export class AdminService {
@@ -119,6 +120,22 @@ export class AdminService {
   async deleteUser(pk: number): Promise<void> {
     await this.api.delete(`/api/v3/core/users/${pk}/`);
     this.logger.log(`Deleted Authentik user pk=${pk}`);
+  }
+
+  async reprovisionAuthentik(): Promise<void> {
+    const authentikService = new AuthentikService();
+    await authentikService.provision({
+      baseUrl: this.config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000',
+      bootstrapToken: this.config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '',
+      adminEmail: this.config.get('ADMIN_EMAIL') ?? '',
+      adminPassword: this.config.get('ADMIN_PASSWORD') ?? '',
+      primaryDomain: this.config.get('PRIMARY_DOMAIN') ?? '',
+      oauthClientId: 'platform-portal',
+      oauthClientSecret: this.config.get('OAUTH_CLIENT_SECRET') ?? '',
+      paperlessOidcClientId: this.config.get('PAPERLESS_OIDC_CLIENT_ID') ?? 'paperless-ngx',
+      paperlessOidcClientSecret: this.config.get('PAPERLESS_OIDC_CLIENT_SECRET') ?? '',
+    });
+    this.logger.log('Authentik re-provisioning complete');
   }
 
   async applyBranding(): Promise<void> {

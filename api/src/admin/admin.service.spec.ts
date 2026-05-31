@@ -2,7 +2,8 @@
 // setRole (use existing group / create group on demand, add_user / remove_user),
 // createUser (with/without phone, sets language:nl, calls generateSetupLink),
 // generateSetupLink (replaces internal hostname, returns '' on failure),
-// deleteUser (calls DELETE), applyBranding (patch brand + stages, strip read-only)
+// deleteUser (calls DELETE), applyBranding (patch brand + stages, strip read-only),
+// reprovisionAuthentik (delegates to AuthentikService.provision with full config)
 //
 // BUG DOCUMENTED: generateSetupLink at admin.service.ts:94 — naive regex replacement
 //   rawLink.replace(/https?:\/\/[^/]+/, publicAuth) may fail behind multiple proxies.
@@ -14,6 +15,7 @@
 import axios from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { AdminService } from './admin.service';
+import { AuthentikService } from '../bootstrap/integrations/authentik.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -252,6 +254,46 @@ describe('AdminService', () => {
       expect(payload.component).toBeUndefined();
       expect(payload.verbose_name).toBeUndefined();
       expect(payload.submit_label).toBe('Sign-In');
+    });
+  });
+
+  // ── reprovisionAuthentik ──────────────────────────────────────────────────
+
+  describe('reprovisionAuthentik()', () => {
+    it('calls AuthentikService.provision with the full config from env', async () => {
+      const provisionSpy = jest
+        .spyOn(AuthentikService.prototype, 'provision')
+        .mockResolvedValue(undefined);
+
+      const svc = new AdminService(
+        makeConfig({
+          AUTHENTIK_URL: 'http://auth:9000',
+          AUTHENTIK_BOOTSTRAP_TOKEN: 'token',
+          PRIMARY_DOMAIN: 'test.com',
+          ADMIN_EMAIL: 'admin@test.com',
+          ADMIN_PASSWORD: 'pw',
+          PAPERLESS_OIDC_CLIENT_ID: 'paperless-ngx',
+          PAPERLESS_OIDC_CLIENT_SECRET: 'paperless-secret',
+          OAUTH_CLIENT_SECRET: 'oauth-secret',
+        }),
+      );
+
+      await svc.reprovisionAuthentik();
+
+      expect(provisionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          baseUrl: 'http://auth:9000',
+          bootstrapToken: 'token',
+          primaryDomain: 'test.com',
+          adminEmail: 'admin@test.com',
+          adminPassword: 'pw',
+          paperlessOidcClientId: 'paperless-ngx',
+          paperlessOidcClientSecret: 'paperless-secret',
+          oauthClientSecret: 'oauth-secret',
+        }),
+      );
+
+      provisionSpy.mockRestore();
     });
   });
 });

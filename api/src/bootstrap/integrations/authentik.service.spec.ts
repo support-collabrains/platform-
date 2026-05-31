@@ -17,6 +17,8 @@ const BASE_CONFIG: AuthentikConfig = {
   primaryDomain: 'test.com',
   oauthClientId: 'platform-portal',
   oauthClientSecret: 'secret',
+  paperlessOidcClientId: 'paperless-ngx',
+  paperlessOidcClientSecret: 'paperless-secret',
 };
 
 function makeInstance() {
@@ -43,14 +45,19 @@ describe('AuthentikService', () => {
 
   function stubProvision(adminExists: boolean) {
     mockedAxios.get.mockResolvedValueOnce({});
-    // Actual call order: users → providers → flows (slug) → applications → brands → stages
+    // Actual call order: users → providers → flows (slug) → applications → brands → stages → ldap mappings (×3) → paperless provider → paperless app
     instance.get
       .mockResolvedValueOnce({ data: { pagination: { count: adminExists ? 1 : 0 }, results: adminExists ? [{ pk: 99 }] : [] } })
       .mockResolvedValueOnce({ data: { pagination: { count: 0 }, results: [] } })   // providers
       .mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 'flow-pk' }] } }) // flows
       .mockResolvedValueOnce({ data: { pagination: { count: 0 }, results: [] } })   // applications
       .mockResolvedValueOnce({ data: { results: [] } })   // brands
-      .mockResolvedValueOnce({ data: { results: [] } });  // stages
+      .mockResolvedValueOnce({ data: { results: [] } })   // stages
+      .mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 'ldap1' }] } }) // ldap mapping 1 (exists)
+      .mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 'ldap2' }] } }) // ldap mapping 2 (exists)
+      .mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 'ldap3' }] } }) // ldap mapping 3 (exists)
+      .mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 77 }] } })       // paperless provider (exists)
+      .mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 88 }] } });      // paperless app (exists)
     instance.post.mockResolvedValue({ data: { pk: 1 } });
     instance.patch.mockResolvedValue({ data: {} });
   }
@@ -229,6 +236,56 @@ describe('AuthentikService', () => {
         (service as unknown as { updateSignInLabel: (api: unknown) => Promise<void> })
           ['updateSignInLabel'](instance),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  // ── createPaperlessOIDCProvider ───────────────────────────────────────────
+
+  describe('createPaperlessOIDCProvider', () => {
+    it('returns existing pk without creating when provider already exists', async () => {
+      instance.get.mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 77 }] } });
+      const pk = await (service as unknown as { createPaperlessOIDCProvider: (api: unknown, cfg: AuthentikConfig) => Promise<number> })
+        ['createPaperlessOIDCProvider'](instance, BASE_CONFIG);
+      expect(pk).toBe(77);
+      expect(instance.post).not.toHaveBeenCalled();
+    });
+
+    it('creates provider with redirect_uri containing docs.${primaryDomain} and the callback path', async () => {
+      instance.get
+        .mockResolvedValueOnce({ data: { pagination: { count: 0 }, results: [] } }) // no existing provider
+        .mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 'flow-pk' }] } }); // flow
+      instance.post.mockResolvedValueOnce({ data: { pk: 77 } });
+
+      await (service as unknown as { createPaperlessOIDCProvider: (api: unknown, cfg: AuthentikConfig) => Promise<number> })
+        ['createPaperlessOIDCProvider'](instance, BASE_CONFIG);
+
+      const payload = instance.post.mock.calls[0][1] as { redirect_uris: string };
+      expect(payload.redirect_uris).toContain(`docs.${BASE_CONFIG.primaryDomain}`);
+      expect(payload.redirect_uris).toContain('/accounts/oidc/paperless-authentik/login/callback/');
+    });
+  });
+
+  // ── createPaperlessApplication ────────────────────────────────────────────
+
+  describe('createPaperlessApplication', () => {
+    it('skips creation when paperless application already exists', async () => {
+      instance.get.mockResolvedValueOnce({ data: { pagination: { count: 1 }, results: [{ pk: 88 }] } });
+      await (service as unknown as { createPaperlessApplication: (api: unknown, providerId: number, domain: string) => Promise<void> })
+        ['createPaperlessApplication'](instance, 88, 'test.com');
+      expect(instance.post).not.toHaveBeenCalled();
+    });
+
+    it('creates application with slug=paperless-ngx, correct provider and meta_launch_url', async () => {
+      instance.get.mockResolvedValueOnce({ data: { pagination: { count: 0 }, results: [] } });
+      instance.post.mockResolvedValueOnce({ data: {} });
+
+      await (service as unknown as { createPaperlessApplication: (api: unknown, providerId: number, domain: string) => Promise<void> })
+        ['createPaperlessApplication'](instance, 88, 'test.com');
+
+      const payload = instance.post.mock.calls[0][1] as { slug: string; provider: number; meta_launch_url: string };
+      expect(payload.slug).toBe('paperless-ngx');
+      expect(payload.provider).toBe(88);
+      expect(payload.meta_launch_url).toBe('https://docs.test.com');
     });
   });
 });

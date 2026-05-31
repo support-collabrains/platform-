@@ -76,6 +76,15 @@ export class AdminController {
 
   // ── User-facing admin endpoints (InternalSecretGuard + RolesGuard) ────────
 
+  @Post('reprovision-authentik')
+  @HttpCode(200)
+  @UseGuards(InternalSecretGuard, RolesGuard)
+  async reprovisionAuthentik(@Headers('x-authentik-username') actor: string) {
+    await this.adminService.reprovisionAuthentik();
+    await this.audit.log(actor ?? 'admin', 'authentik.reprovision', 'system');
+    return { ok: true };
+  }
+
   @Get('users')
   @UseGuards(InternalSecretGuard, RolesGuard)
   async listUsers() {

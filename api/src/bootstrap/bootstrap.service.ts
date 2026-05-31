@@ -168,6 +168,8 @@ export class BootstrapService implements OnModuleInit {
       primaryDomain: dto.primaryDomain,
       oauthClientId: secrets.oauthClientId,
       oauthClientSecret: secrets.oauthClientSecret,
+      paperlessOidcClientId: process.env.PAPERLESS_OIDC_CLIENT_ID ?? 'paperless-ngx',
+      paperlessOidcClientSecret: process.env.PAPERLESS_OIDC_CLIENT_SECRET ?? '',
     });
     await this.emitEvent(BootstrapState.AUTHENTIK_SETUP, 'authentik', 'Authentik provisioned successfully');
 

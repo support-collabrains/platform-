@@ -8,6 +8,7 @@ import { MailModule } from '../mail/mail.module';
 import { CalendarModule } from '../calendar/calendar.module';
 import { PushModule } from '../push/push.module';
 import { SignalTicket } from '../tickets/ticket.entity';
+import { FinanceModule } from '../finance/finance.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { SignalTicket } from '../tickets/ticket.entity';
     MailModule,
     CalendarModule,
     PushModule,
+    FinanceModule,
   ],
   providers: [ProactiveService],
   controllers: [ProactiveController],

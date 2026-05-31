@@ -1,7 +1,7 @@
 import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 export type HintType = 'appointment' | 'deadline' | 'ticket_due';
-export type HintSource = 'mail' | 'document' | 'ticket';
+export type HintSource = 'mail' | 'document' | 'ticket' | 'finance';
 export type HintStatus = 'pending' | 'accepted' | 'dismissed';
 
 @Entity('proactive_hints')

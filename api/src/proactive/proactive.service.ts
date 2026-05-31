@@ -10,6 +10,7 @@ import { MailImapService } from '../mail/mail-imap.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { PushService } from '../push/push.service';
 import { SignalTicket } from '../tickets/ticket.entity';
+import { FinanceAlertService } from '../finance/finance-alert.service';
 
 interface AuthUser { username: string; email: string; attributes: Record<string, string> }
 interface ExtractedHint { title: string; date: string; type: 'appointment' | 'deadline' }
@@ -32,6 +33,7 @@ export class ProactiveService implements OnModuleInit, OnModuleDestroy {
     private readonly calendar: CalendarService,
     private readonly push: PushService,
     private readonly config: ConfigService,
+    private readonly financeAlert: FinanceAlertService,
   ) {
     this.authentikUrl = config.get('AUTHENTIK_URL') ?? 'http://authentik-server:9000';
     this.authentikToken = config.get('AUTHENTIK_BOOTSTRAP_TOKEN') ?? '';
@@ -131,7 +133,26 @@ export class ProactiveService implements OnModuleInit, OnModuleDestroy {
       ...(docHints.status === 'fulfilled' ? docHints.value : []),
     ];
 
-    return this.saveNewHints(username, all);
+    const saved = await this.saveNewHints(username, all);
+
+    // Finance: abonnement opzegtermijn-alerts
+    try {
+      const alerts = await this.financeAlert.checkUser(username, _phone);
+      for (const msg of alerts) {
+        await this.repo.save(this.repo.create({
+          username,
+          title: msg,
+          suggestedDate: new Date().toISOString().slice(0, 10),
+          type: 'deadline',
+          source: 'finance',
+          status: 'pending',
+        }));
+      }
+    } catch {
+      // non-fatal
+    }
+
+    return saved;
   }
 
   // Tickets with a dueDate in the next 14 days → suggest calendar event

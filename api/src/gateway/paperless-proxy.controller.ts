@@ -97,23 +97,30 @@ export class PaperlessProxyController {
     @Res() res: Response,
   ) {
     try {
+      // Pipe de inkomende multipart stream direct door naar Paperless
       const upstream = await axios.post(
         `${this.paperlessUrl}/api/documents/post_document/`,
-        req,
+        req as unknown as import('stream').Readable,
         {
           headers: {
             Authorization: `Token ${this.paperlessToken}`,
             'content-type': req.headers['content-type'] ?? 'multipart/form-data',
+            'transfer-encoding': 'chunked',
           },
-          timeout: 60_000,
+          timeout: 120_000,
           responseType: 'arraybuffer',
           maxBodyLength: 50 * 1024 * 1024,
+          maxContentLength: 50 * 1024 * 1024,
         },
       );
       res.status(upstream.status).send(upstream.data);
     } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response?.status ?? 502;
-      res.status(status).json({ error: 'Upload mislukt' });
+      const axiosErr = err as { response?: { status?: number; data?: Buffer } };
+      const status = axiosErr?.response?.status ?? 502;
+      const msg = axiosErr?.response?.data
+        ? axiosErr.response.data.toString('utf8').slice(0, 200)
+        : 'Upload mislukt';
+      res.status(status).json({ error: msg });
     }
   }
 }

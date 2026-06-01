@@ -310,7 +310,6 @@ export default function DocsPage() {
             </button>
             {docTypes.map(ty => {
               const count = docs.filter(d => d.document_type === ty.id).length;
-              if (count === 0) return null;
               const isActive = selectedTypeId === ty.id;
               return (
                 <button key={ty.id} type="button" onClick={() => setSelectedTypeId(isActive ? null : ty.id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition shrink-0 ${isActive ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-slate-500'}`}>

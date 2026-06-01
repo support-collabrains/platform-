@@ -63,6 +63,8 @@ export class MailImapService {
         await this.createMailboxViaApi(email, password);
       }
       await this.storePasswordInAuthentik(String(authUser.pk), authUser.attributes ?? {}, password);
+      // Flush Dovecot auth cache zodat het nieuwe wachtwoord direct werkt
+      await this.flushDovecotAuthCache(email);
     }
 
     return { user: email, pass: password };
@@ -104,12 +106,48 @@ export class MailImapService {
   }
 
   private async resetMailcowPassword(email: string, password: string): Promise<void> {
+    // Mailcow's json_api.php checkt HTTP_CONTENT_TYPE i.p.v. CONTENT_TYPE —
+    // JSON body wordt niet geparsed. Stuur als form-encoded POST in plaats daarvan.
+    const params = new URLSearchParams();
+    params.set('attr', JSON.stringify({ password, password2: password }));
+    params.set('items', JSON.stringify([email]));
     await axios.post(
       `${this.mailcowUrl}/api/v1/edit/mailbox`,
-      [{ attr: { passwd: password, passwd2: password }, items: [email] }],
-      { headers: { 'X-API-Key': this.mailcowApiKey }, timeout: 15_000 },
+      params.toString(),
+      {
+        headers: {
+          'X-API-Key': this.mailcowApiKey,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        timeout: 15_000,
+      },
     );
     this.logger.log(`Reset Mailcow password for ${email} via API`);
+  }
+
+  private async flushDovecotAuthCache(email: string): Promise<void> {
+    // Dovecot auth_cache_ttl = 300s, negative_ttl = 60s
+    // Flush via doveadm HTTP API op poort 12345 als het wachtwoord beschikbaar is
+    const doveadmPassword = this.config.get('DOVECOT_DOVEADM_PASSWORD') ?? '';
+    if (!doveadmPassword) {
+      // Geen wachtwoord geconfigureerd — wacht 2s zodat de DB-write doorkomt
+      await new Promise(r => setTimeout(r, 2000));
+      return;
+    }
+    try {
+      await axios.post(
+        `http://dovecot-mailcow:12345/doveadm/v1`,
+        [['authCacheFlush', 'mailbox', {}, email]],
+        {
+          auth: { username: 'doveadm', password: doveadmPassword },
+          timeout: 5_000,
+        },
+      );
+      this.logger.log(`Dovecot auth cache geflusht voor ${email}`);
+    } catch {
+      // Non-fatal — cache verloopt vanzelf na max 60s (negative_ttl)
+      await new Promise(r => setTimeout(r, 2000));
+    }
   }
 
   private async storePasswordInAuthentik(

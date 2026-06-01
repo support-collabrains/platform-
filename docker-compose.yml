@@ -128,7 +128,7 @@ services:
     restart: unless-stopped
     environment:
       - NEXT_PUBLIC_API_URL=https://portal.${PRIMARY_DOMAIN}/api
-      - NEXT_PUBLIC_LOGOUT_URL=https://auth.${PRIMARY_DOMAIN}/if/session-end/collaBrains/
+      - NEXT_PUBLIC_LOGOUT_URL=https://auth.${PRIMARY_DOMAIN}/if/session-end/platform-portal/
       - INTERNAL_API_URL=http://api:3001
       - AUTHENTIK_WEBHOOK_SECRET=${AUTHENTIK_WEBHOOK_SECRET}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}

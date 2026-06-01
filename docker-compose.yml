@@ -132,6 +132,8 @@ services:
       - INTERNAL_API_URL=http://api:3001
       - AUTHENTIK_WEBHOOK_SECRET=${AUTHENTIK_WEBHOOK_SECRET}
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET}
+      - IMMICH_INTERNAL_URL=http://immich-server:2283
+      - IMMICH_API_KEY=${IMMICH_API_KEY:-}
     depends_on: [api]
     networks: [platform]
     healthcheck:

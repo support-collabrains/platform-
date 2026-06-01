@@ -17,7 +17,8 @@ auth.platform.cbrains.de {
 portal.platform.cbrains.de {
     @public path /logo.svg /favicon.ico
     @static path_regexp ^\/_next\/(static|image)\/
-    @api path /api/*
+    # Directe NestJS routes (bootstrap SSE, webhooks) — geen portal proxy nodig
+    @direct_api path /api/bootstrap/* /api/users/webhook /api/push/*
 
     handle @public {
         reverse_proxy portal:3000
@@ -27,7 +28,7 @@ portal.platform.cbrains.de {
         reverse_proxy portal:3000
     }
 
-    handle @api {
+    handle @direct_api {
         uri strip_prefix /api
         reverse_proxy api:3001
     }

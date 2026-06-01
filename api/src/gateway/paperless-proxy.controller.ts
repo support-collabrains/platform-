@@ -97,15 +97,22 @@ export class PaperlessProxyController {
     @Res() res: Response,
   ) {
     try {
-      // Pipe de inkomende multipart stream direct door naar Paperless
+      // Buffer de inkomende request zodat we de exacte bytes kunnen forwarden
+      const rawBody = await new Promise<Buffer>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        req.on('data', (chunk: Buffer) => chunks.push(chunk));
+        req.on('end', () => resolve(Buffer.concat(chunks)));
+        req.on('error', reject);
+      });
+
       const upstream = await axios.post(
         `${this.paperlessUrl}/api/documents/post_document/`,
-        req as unknown as import('stream').Readable,
+        rawBody,
         {
           headers: {
             Authorization: `Token ${this.paperlessToken}`,
             'content-type': req.headers['content-type'] ?? 'multipart/form-data',
-            'transfer-encoding': 'chunked',
+            'content-length': rawBody.length,
           },
           timeout: 120_000,
           responseType: 'arraybuffer',

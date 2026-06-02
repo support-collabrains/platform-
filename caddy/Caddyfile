@@ -17,6 +17,8 @@ auth.platform.cbrains.de {
 portal.platform.cbrains.de {
     @public path /logo.svg /favicon.ico
     @static path_regexp ^\/_next\/(static|image)\/
+    # Authentik outpost routes (callback, sign-out, assets)
+    @outpost path /outpost.goauthentik.io/*
     # Directe NestJS routes (bootstrap SSE, webhooks) — geen portal proxy nodig
     @direct_api path /api/bootstrap/* /api/users/webhook /api/push/*
 
@@ -26,6 +28,10 @@ portal.platform.cbrains.de {
 
     handle @static {
         reverse_proxy portal:3000
+    }
+
+    handle @outpost {
+        reverse_proxy authentik-server:9000
     }
 
     handle @direct_api {

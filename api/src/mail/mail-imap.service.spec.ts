@@ -53,6 +53,7 @@ function makeService(): MailImapService {
         MAILCOW_URL: 'http://mailcow:8080',
         MAILCOW_API_KEY: 'key',
         IMAP_HOST: 'dovecot-mailcow',
+        MAIL_DOMAIN: 'test.com',
         MAILCOW_DB_HOST: 'mysql-mailcow',
         MAILCOW_DB_NAME: 'mailcow',
         MAILCOW_DB_USER: 'mailcow',
@@ -146,22 +147,21 @@ describe('MailImapService', () => {
     });
 
     it('generates new password when attribute missing, resets Mailcow and stores in Authentik', async () => {
-      const mysql2 = jest.requireMock('mysql2/promise') as { createConnection: jest.Mock };
-      const mockConn = { execute: jest.fn().mockResolvedValue([{}]), end: jest.fn().mockResolvedValue(undefined) };
-      (mysql2.createConnection as jest.Mock).mockResolvedValue(mockConn);
-      (mockedBcrypt.hash as jest.Mock).mockResolvedValue('$hash');
-
       mockedAxios.get
         .mockResolvedValueOnce({ data: { results: [{ pk: 1, email: 'alice@test.com', attributes: {} }] } }) // user lookup
         .mockResolvedValueOnce({ data: { username: 'alice@test.com' } }) as jest.MockedFunction<typeof axios.get>; // checkMailboxExists → exists
+      // resetMailcowPassword posts form-encoded data; storePasswordInAuthentik patches; flushDovecotAuthCache posts
+      mockedAxios.post.mockResolvedValue({ data: {} }) as jest.MockedFunction<typeof axios.post>;
       mockedAxios.patch.mockResolvedValueOnce({ data: {} }) as jest.MockedFunction<typeof axios.patch>;
 
       const creds = await service.getCredentials('alice');
       expect(creds.user).toBe('alice@test.com');
       expect(creds.pass).toMatch(/Aa1!$/);
-      expect(mockConn.execute).toHaveBeenCalledWith(
-        'UPDATE mailbox SET password = ? WHERE username = ?',
-        [expect.stringContaining('{BLF-CRYPT}'), 'alice@test.com'],
+      // resetMailcowPassword calls axios.post with form-encoded body to /api/v1/edit/mailbox
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/edit/mailbox'),
+        expect.stringContaining('password'),
+        expect.objectContaining({ headers: expect.objectContaining({ 'Content-Type': 'application/x-www-form-urlencoded' }) }),
       );
       expect(mockedAxios.patch).toHaveBeenCalled();
     });
@@ -175,30 +175,28 @@ describe('MailImapService', () => {
   // ── resetMailcowPassword ──────────────────────────────────────────────────
 
   describe('resetMailcowPassword', () => {
-    it('closes MySQL connection in finally block even on error', async () => {
-      const mysql2 = jest.requireMock('mysql2/promise') as { createConnection: jest.Mock };
-      const mockConn = { execute: jest.fn().mockRejectedValue(new Error('DB error')), end: jest.fn().mockResolvedValue(undefined) };
-      (mysql2.createConnection as jest.Mock).mockResolvedValue(mockConn);
-      (mockedBcrypt.hash as jest.Mock).mockResolvedValue('$hash');
+    it('rejects and propagates when axios.post throws', async () => {
+      mockedAxios.post.mockRejectedValueOnce(new Error('API error')) as jest.MockedFunction<typeof axios.post>;
 
       await expect(
         (service as unknown as { resetMailcowPassword: (e: string, p: string) => Promise<void> })
           ['resetMailcowPassword']('alice@test.com', 'pw'),
-      ).rejects.toThrow();
-      expect(mockConn.end).toHaveBeenCalled();
+      ).rejects.toThrow('API error');
     });
 
-    it('prepends {BLF-CRYPT} to bcrypt hash', async () => {
-      const mysql2 = jest.requireMock('mysql2/promise') as { createConnection: jest.Mock };
-      const mockConn = { execute: jest.fn().mockResolvedValue([{}]), end: jest.fn().mockResolvedValue(undefined) };
-      (mysql2.createConnection as jest.Mock).mockResolvedValue(mockConn);
-      (mockedBcrypt.hash as jest.Mock).mockResolvedValue('$2b$10$xyz');
+    it('POSTs form-encoded body with password and email to /api/v1/edit/mailbox', async () => {
+      mockedAxios.post.mockResolvedValueOnce({ data: {} }) as jest.MockedFunction<typeof axios.post>;
 
       await (service as unknown as { resetMailcowPassword: (e: string, p: string) => Promise<void> })
-        ['resetMailcowPassword']('alice@test.com', 'pw');
+        ['resetMailcowPassword']('alice@test.com', 'my-password');
 
-      const [storedHash] = mockConn.execute.mock.calls[0][1] as string[];
-      expect(storedHash).toBe('{BLF-CRYPT}$2b$10$xyz');
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/edit/mailbox'),
+        expect.stringContaining('password'),
+        expect.objectContaining({
+          headers: expect.objectContaining({ 'Content-Type': 'application/x-www-form-urlencoded' }),
+        }),
+      );
     });
   });
 

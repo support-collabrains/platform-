@@ -1,7 +1,9 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { DocumentsService } from './documents.service';
+import { InternalSecretGuard } from '../users-me/internal-secret.guard';
 
 @Controller('documents')
+@UseGuards(InternalSecretGuard)
 export class DocumentsController {
   constructor(private readonly service: DocumentsService) {}
 

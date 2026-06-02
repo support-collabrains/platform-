@@ -1,4 +1,4 @@
-// Covers: ensureCollection (MKCOL to correct URL, swallows errors),
+// Covers: ensureCollection (two-step MKCOL+MKCALENDAR to correct URLs, swallows errors),
 // getEvents (REPORT request with time-range, parses timed and all-day events,
 //   returns empty array on error), createEvent (returns UID, PUTs iCal content,
 //   DATE format for all-day, includes optional LOCATION/DESCRIPTION),
@@ -87,18 +87,30 @@ describe('CalendarService', () => {
   beforeEach(() => jest.clearAllMocks());
 
   describe('ensureCollection()', () => {
-    it('sends MKCOL to the user collection URL', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+    it('sends MKCOL to the parent user home URL then MKCALENDAR to the calendar URL', async () => {
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' }) // parent MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }); // MKCALENDAR
       await makeService().ensureCollection('alice');
-      expect(mockedAxios.request).toHaveBeenCalledWith(
-        expect.objectContaining({ method: 'MKCOL', url: 'http://radicale:5232/alice/calendar/' }),
-      );
+      // First call: plain MKCOL to the user home collection
+      expect(mockedAxios.request.mock.calls[0][0]).toMatchObject({
+        method: 'MKCOL',
+        url: 'http://radicale:5232/alice/',
+      });
+      // Second call: MKCALENDAR to the calendar sub-collection
+      expect(mockedAxios.request.mock.calls[1][0]).toMatchObject({
+        method: 'MKCALENDAR',
+        url: 'http://radicale:5232/alice/calendar/',
+      });
     });
 
     it('uses custom RADICALE_URL from config', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       await makeService({ RADICALE_URL: 'http://custom:9999' }).ensureCollection('alice');
-      expect(mockedAxios.request.mock.calls[0][0]).toMatchObject({ url: 'http://custom:9999/alice/calendar/' });
+      expect(mockedAxios.request.mock.calls[0][0]).toMatchObject({ url: 'http://custom:9999/alice/' });
+      expect(mockedAxios.request.mock.calls[1][0]).toMatchObject({ url: 'http://custom:9999/alice/calendar/' });
     });
 
     it('does not throw when MKCOL fails (collection may already exist)', async () => {
@@ -106,35 +118,42 @@ describe('CalendarService', () => {
       await expect(makeService().ensureCollection('alice')).resolves.toBeUndefined();
     });
 
-    it('sends XML body with caldav content type', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+    it('sends XML body with caldav content type on the MKCALENDAR request', async () => {
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' }) // parent MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }); // MKCALENDAR
       await makeService().ensureCollection('alice');
-      const opts = mockedAxios.request.mock.calls[0][0] as { headers: Record<string, string>; data: string };
+      // calls[1] is the MKCALENDAR request that carries the mkcalendar XML body
+      const opts = mockedAxios.request.mock.calls[1][0] as { headers: Record<string, string>; data: string };
       expect(opts.headers['Content-Type']).toContain('application/xml');
       expect(opts.data).toContain('mkcalendar');
     });
   });
 
   describe('getEvents()', () => {
-    it('calls ensureCollection before REPORT', async () => {
+    it('calls ensureCollection (2 requests) before REPORT — 3 calls total', async () => {
       mockedAxios.request
-        .mockResolvedValueOnce({ status: 201, data: '' }) // MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }) // parent MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }) // MKCALENDAR
         .mockResolvedValueOnce({ data: '' });              // REPORT
       await makeService().getEvents('alice', new Date(), new Date());
-      expect(mockedAxios.request).toHaveBeenCalledTimes(2);
-      const [mkcol, report] = mockedAxios.request.mock.calls as Array<[{ method: string }]>;
-      expect(mkcol[0].method).toBe('MKCOL');
-      expect(report[0].method).toBe('REPORT');
+      expect(mockedAxios.request).toHaveBeenCalledTimes(3);
+      const calls = mockedAxios.request.mock.calls as Array<[{ method: string }]>;
+      expect(calls[0][0].method).toBe('MKCOL');
+      expect(calls[1][0].method).toBe('MKCALENDAR');
+      expect(calls[2][0].method).toBe('REPORT');
     });
 
     it('sends REPORT with from/to date range', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: '' });
       const from = new Date('2024-03-01T00:00:00Z');
       const to = new Date('2024-04-01T00:00:00Z');
       await makeService().getEvents('alice', from, to);
-      const opts = mockedAxios.request.mock.calls[1][0] as { data: string };
+      // calls[2] is the REPORT
+      const opts = mockedAxios.request.mock.calls[2][0] as { data: string };
       expect(opts.data).toContain('20240301');
       expect(opts.data).toContain('20240401');
     });
@@ -142,14 +161,17 @@ describe('CalendarService', () => {
     it('sends REPORT with Depth:1 header', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: '' });
       await makeService().getEvents('alice', new Date(), new Date());
-      const opts = mockedAxios.request.mock.calls[1][0] as { headers: Record<string, string> };
+      // calls[2] is the REPORT
+      const opts = mockedAxios.request.mock.calls[2][0] as { headers: Record<string, string> };
       expect(opts.headers['Depth']).toBe('1');
     });
 
     it('parses timed event from CalDAV REPORT response', async () => {
       mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: TIMED_EVENT_XML });
       const events = await makeService().getEvents('alice', new Date(), new Date());
@@ -164,6 +186,7 @@ describe('CalendarService', () => {
     it('parses all-day event as allDay:true with DATE-only start', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: ALLDAY_EVENT_XML });
       const events = await makeService().getEvents('alice', new Date(), new Date());
       expect(events[0].allDay).toBe(true);
@@ -173,6 +196,7 @@ describe('CalendarService', () => {
     it('skips events without SUMMARY', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: NO_SUMMARY_XML });
       const events = await makeService().getEvents('alice', new Date(), new Date());
       expect(events).toHaveLength(0);
@@ -180,6 +204,7 @@ describe('CalendarService', () => {
 
     it('parses multiple events from a single REPORT response', async () => {
       mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: TWO_EVENTS_XML });
       const events = await makeService().getEvents('alice', new Date(), new Date());
@@ -190,6 +215,7 @@ describe('CalendarService', () => {
     it('returns empty array on REPORT network error', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockRejectedValueOnce(new Error('timeout'));
       const events = await makeService().getEvents('alice', new Date(), new Date());
       expect(events).toEqual([]);
@@ -197,6 +223,7 @@ describe('CalendarService', () => {
 
     it('returns empty array when response is empty string', async () => {
       mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: '' });
       const events = await makeService().getEvents('alice', new Date(), new Date());
@@ -206,7 +233,9 @@ describe('CalendarService', () => {
 
   describe('createEvent()', () => {
     it('returns a UID string containing @collabrains', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' }) // parent MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }); // MKCALENDAR
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       const uid = await makeService().createEvent('alice', {
         summary: 'Stand-up',
@@ -219,7 +248,9 @@ describe('CalendarService', () => {
     });
 
     it('PUTs iCal to collection URL with .ics extension', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Meet',
@@ -232,7 +263,9 @@ describe('CalendarService', () => {
     });
 
     it('generates valid iCal with BEGIN/END VCALENDAR and VEVENT', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Stand-up',
@@ -248,7 +281,9 @@ describe('CalendarService', () => {
     });
 
     it('uses VALUE=DATE format for all-day events', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Vacation',
@@ -262,7 +297,9 @@ describe('CalendarService', () => {
     });
 
     it('uses DATETIME format (no VALUE=DATE) for timed events', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Call',
@@ -276,7 +313,9 @@ describe('CalendarService', () => {
     });
 
     it('includes LOCATION line when location is provided', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Meeting',
@@ -290,7 +329,9 @@ describe('CalendarService', () => {
     });
 
     it('includes DESCRIPTION line when description is provided', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Meeting',
@@ -304,7 +345,9 @@ describe('CalendarService', () => {
     });
 
     it('omits LOCATION when not provided', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Stand-up',
@@ -317,7 +360,9 @@ describe('CalendarService', () => {
     });
 
     it('uses text/calendar content type', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createEvent('alice', {
         summary: 'Stand-up',

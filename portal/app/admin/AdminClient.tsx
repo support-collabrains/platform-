@@ -53,7 +53,7 @@ const STATUS_CLASS: Record<string, string> = {
 // ──────────────────────────────────────────────────────────────────────────────
 
 export default function AdminClient() {
-  const [activeTab, setActiveTab] = useState('tickets');
+  const [activeTab, setActiveTab] = useState('users');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(false);
 

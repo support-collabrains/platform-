@@ -1,6 +1,6 @@
 // Covers: addressbookUrl validation (rejects path-traversal / slash chars),
-// ensureAddressbook (MKCOL, swallows errors),
-// getContacts (PROPFIND, parses CardDAV XML with all fields, empty on error),
+// ensureAddressbook (two-step MKCOL: home collection then addressbook collection, swallows errors),
+// getContacts (REPORT/addressbook-query, parses CardDAV XML with all fields, empty on error),
 // createContact (PUT returns uid, includes optional fields),
 // escapeVCardValue via createContact (strips CRLF injection, escapes \\ , ;),
 // unfoldVCard via getContacts (handles folded lines),
@@ -18,7 +18,7 @@ function makeService(overrides: Record<string, string> = {}): ContactsService {
   return new ContactsService({ get: (k: string) => cfg[k] ?? '' } as unknown as ConfigService);
 }
 
-const PROPFIND_FULL = `<?xml version="1.0" ?>
+const REPORT_FULL = `<?xml version="1.0" ?>
 <D:multistatus xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
   <D:response>
     <CR:address-data>BEGIN:VCARD
@@ -32,7 +32,7 @@ END:VCARD</CR:address-data>
   </D:response>
 </D:multistatus>`;
 
-const PROPFIND_MINIMAL = `<?xml version="1.0" ?>
+const REPORT_MINIMAL = `<?xml version="1.0" ?>
 <D:multistatus xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
   <D:response>
     <CR:address-data>BEGIN:VCARD
@@ -43,7 +43,7 @@ END:VCARD</CR:address-data>
   </D:response>
 </D:multistatus>`;
 
-const PROPFIND_NO_FN = `<?xml version="1.0" ?>
+const REPORT_NO_FN = `<?xml version="1.0" ?>
 <D:multistatus xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
   <D:response>
     <CR:address-data>BEGIN:VCARD
@@ -54,7 +54,7 @@ END:VCARD</CR:address-data>
   </D:response>
 </D:multistatus>`;
 
-const PROPFIND_FOLDED = `<?xml version="1.0" ?>
+const REPORT_FOLDED = `<?xml version="1.0" ?>
 <D:multistatus xmlns:D="DAV:" xmlns:CR="urn:ietf:params:xml:ns:carddav">
   <D:response>
     <CR:address-data>BEGIN:VCARD
@@ -95,7 +95,10 @@ describe('ContactsService', () => {
 
   describe('ensureAddressbook()', () => {
     it('sends MKCOL to the user addressbook URL', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      // Two calls: home collection MKCOL, then addressbook MKCOL
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' }) // home MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }); // addressbook MKCOL
       await makeService().ensureAddressbook('alice');
       expect(mockedAxios.request).toHaveBeenCalledWith(
         expect.objectContaining({ method: 'MKCOL', url: 'http://radicale:5232/alice/contacts/' }),
@@ -103,9 +106,13 @@ describe('ContactsService', () => {
     });
 
     it('sends XML body declaring addressbook resource type', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      // Two calls: home collection MKCOL (index 0), then addressbook MKCOL (index 1)
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' }) // home MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }); // addressbook MKCOL
       await makeService().ensureAddressbook('alice');
-      const opts = mockedAxios.request.mock.calls[0][0] as { data: string };
+      // calls[1] is the addressbook MKCOL which carries the addressbook XML body
+      const opts = mockedAxios.request.mock.calls[1][0] as { data: string };
       expect(opts.data).toContain('addressbook');
     });
 
@@ -116,28 +123,33 @@ describe('ContactsService', () => {
   });
 
   describe('getContacts()', () => {
-    it('calls ensureAddressbook before PROPFIND', async () => {
+    it('calls ensureAddressbook before REPORT', async () => {
+      // ensureAddressbook: home MKCOL + addressbook MKCOL; then REPORT
       mockedAxios.request
-        .mockResolvedValueOnce({ status: 201, data: '' }) // MKCOL
-        .mockResolvedValueOnce({ data: '' });              // PROPFIND
+        .mockResolvedValueOnce({ status: 201, data: '' }) // home MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }) // addressbook MKCOL
+        .mockResolvedValueOnce({ data: '' });              // REPORT
       await makeService().getContacts('alice');
       const methods = mockedAxios.request.mock.calls.map((c) => (c[0] as { method: string }).method);
-      expect(methods).toEqual(['MKCOL', 'PROPFIND']);
+      expect(methods).toEqual(['MKCOL', 'MKCOL', 'REPORT']);
     });
 
-    it('sends PROPFIND with Depth:1 header', async () => {
+    it('sends REPORT with Depth:1 header', async () => {
       mockedAxios.request
-        .mockResolvedValueOnce({ status: 201, data: '' })
-        .mockResolvedValueOnce({ data: '' });
+        .mockResolvedValueOnce({ status: 201, data: '' }) // home MKCOL
+        .mockResolvedValueOnce({ status: 201, data: '' }) // addressbook MKCOL
+        .mockResolvedValueOnce({ data: '' });              // REPORT
       await makeService().getContacts('alice');
-      const opts = mockedAxios.request.mock.calls[1][0] as { headers: Record<string, string> };
+      // calls[2] is the REPORT request
+      const opts = mockedAxios.request.mock.calls[2][0] as { headers: Record<string, string> };
       expect(opts.headers['Depth']).toBe('1');
     });
 
     it('parses full contact from CardDAV response', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
-        .mockResolvedValueOnce({ data: PROPFIND_FULL });
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ data: REPORT_FULL });
       const contacts = await makeService().getContacts('alice');
       expect(contacts).toHaveLength(1);
       expect(contacts[0]).toMatchObject({
@@ -152,7 +164,8 @@ describe('ContactsService', () => {
     it('parses minimal contact with only FN', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
-        .mockResolvedValueOnce({ data: PROPFIND_MINIMAL });
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ data: REPORT_MINIMAL });
       const contacts = await makeService().getContacts('alice');
       expect(contacts[0].fullName).toBe('Bob');
       expect(contacts[0].email).toBeUndefined();
@@ -161,7 +174,8 @@ describe('ContactsService', () => {
     it('skips vCard entries without FN', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
-        .mockResolvedValueOnce({ data: PROPFIND_NO_FN });
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ data: REPORT_NO_FN });
       const contacts = await makeService().getContacts('alice');
       expect(contacts).toHaveLength(0);
     });
@@ -169,13 +183,15 @@ describe('ContactsService', () => {
     it('unfolds folded vCard lines', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
-        .mockResolvedValueOnce({ data: PROPFIND_FOLDED });
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ data: REPORT_FOLDED });
       const contacts = await makeService().getContacts('alice');
       expect(contacts[0].fullName).toBe('Charlotte');
     });
 
-    it('returns empty array on PROPFIND network error', async () => {
+    it('returns empty array on REPORT network error', async () => {
       mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ status: 201, data: '' })
         .mockRejectedValueOnce(new Error('timeout'));
       const contacts = await makeService().getContacts('alice');
@@ -185,6 +201,7 @@ describe('ContactsService', () => {
     it('returns empty array for empty response body', async () => {
       mockedAxios.request
         .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' })
         .mockResolvedValueOnce({ data: '' });
       const contacts = await makeService().getContacts('alice');
       expect(contacts).toEqual([]);
@@ -193,7 +210,10 @@ describe('ContactsService', () => {
 
   describe('createContact()', () => {
     it('returns a UID string containing @collabrains', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      // ensureAddressbook: home MKCOL + addressbook MKCOL
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       const uid = await makeService().createContact('alice', { fullName: 'Bob' });
       expect(typeof uid).toBe('string');
@@ -201,7 +221,9 @@ describe('ContactsService', () => {
     });
 
     it('PUTs vCard to addressbook URL with .vcf extension', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createContact('alice', { fullName: 'Bob' });
       const putUrl = mockedAxios.put.mock.calls[0][0] as string;
@@ -209,7 +231,9 @@ describe('ContactsService', () => {
     });
 
     it('generates valid vCard 3.0 with BEGIN/END', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createContact('alice', { fullName: 'Carol' });
       const vcard = mockedAxios.put.mock.calls[0][1] as string;
@@ -220,7 +244,9 @@ describe('ContactsService', () => {
     });
 
     it('includes EMAIL, TEL, ORG when provided', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createContact('alice', {
         fullName: 'Dave',
@@ -235,7 +261,9 @@ describe('ContactsService', () => {
     });
 
     it('omits optional fields when not provided', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createContact('alice', { fullName: 'Eve' });
       const vcard = mockedAxios.put.mock.calls[0][1] as string;
@@ -245,7 +273,9 @@ describe('ContactsService', () => {
     });
 
     it('strips CR/LF from fullName (CRLF injection prevention)', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createContact('alice', { fullName: 'Injected\r\nX-Evil:bad' });
       const vcard = mockedAxios.put.mock.calls[0][1] as string;
@@ -259,7 +289,9 @@ describe('ContactsService', () => {
     });
 
     it('escapes backslash, comma, and semicolon per RFC 6350', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createContact('alice', { fullName: 'A\\B,C;D' });
       const vcard = mockedAxios.put.mock.calls[0][1] as string;
@@ -268,7 +300,9 @@ describe('ContactsService', () => {
     });
 
     it('uses text/vcard content type', async () => {
-      mockedAxios.request.mockResolvedValueOnce({ status: 201, data: '' });
+      mockedAxios.request
+        .mockResolvedValueOnce({ status: 201, data: '' })
+        .mockResolvedValueOnce({ status: 201, data: '' });
       mockedAxios.put.mockResolvedValueOnce({ data: '' });
       await makeService().createContact('alice', { fullName: 'Frank' });
       const opts = mockedAxios.put.mock.calls[0][2] as { headers: Record<string, string> };

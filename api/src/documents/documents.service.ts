@@ -72,7 +72,7 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
     this.redis = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: null });
     await this.redis.connect().catch(() => {});
 
-    this.poller = setInterval(() => this.pollSignal(), 30_000);
+    this.poller = setInterval(() => this.pollSignal(), 5_000);
 
     // Pull Ollama model in background — may take minutes on first boot
     this.ollama.ensureModel().catch(() => {});
@@ -86,6 +86,34 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   // Called by Paperless post-consume script via POST /documents/consumed
+  async handleSignalCommand(sender: string, text: string, _timestamp?: number): Promise<void> {
+    // Called by signal-consumer when a /command is received.
+    // The consumer consumed the message before the NestJS poller could read it,
+    // so the consumer forwards commands here via HTTP.
+    this.logger.log(`Signal command via webhook: from=${sender} text="${text}"`);
+
+    // Store in Redis so the next pollSignal cycle processes it like a real message
+    if (this.redis) {
+      const key = `signal:pending:${Date.now()}`;
+      await this.redis.setex(key, 300, JSON.stringify({
+        envelope: {
+          sourceNumber: sender,
+          sourceUuid: '',
+          timestamp: Date.now(),
+          dataMessage: { message: text, attachments: [], reaction: null },
+        },
+      }));
+    }
+
+    // Also handle /help immediately without waiting for next poll
+    if (/^\/help$/i.test(text)) {
+      const lang = await this.getLanguageForPhone(sender);
+      await this.sendSignal(sender, this.i18n(lang).help(
+        this.portalOrigin ? `${this.portalOrigin}/dashboard` : 'het dashboard',
+      ));
+    }
+  }
+
   async onConsumed(paperlessId: number, owner: string, title: string): Promise<void> {
     // Idempotent: skip if we already know this document
     const existing = await this.docRepo.findOne({ where: { paperlessId } });
@@ -132,9 +160,23 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         { timeout: 10_000 },
       );
 
-      if (!Array.isArray(messages) || messages.length === 0) return;
+      // Also drain any pending messages forwarded by signal-consumer via webhook
+      const pendingMessages: unknown[] = [];
+      if (this.redis) {
+        const keys = await this.redis.keys('signal:pending:*');
+        for (const key of keys) {
+          const raw = await this.redis.get(key);
+          if (raw) {
+            try { pendingMessages.push(JSON.parse(raw)); } catch { /* skip */ }
+            await this.redis.del(key);
+          }
+        }
+      }
 
-      for (const msg of messages) {
+      const allMessages = [...(Array.isArray(messages) ? messages : []), ...pendingMessages];
+      if (allMessages.length === 0) return;
+
+      for (const msg of allMessages) {
         const envelope = msg?.envelope;
         if (!envelope) continue;
 
@@ -142,10 +184,12 @@ export class DocumentsService implements OnModuleInit, OnModuleDestroy {
         const senderPhone: string = envelope.sourceNumber ?? '';
         const senderUuid: string = envelope.sourceUuid ?? '';
         const sender: string = senderPhone || senderUuid;
-        const text: string = (envelope.dataMessage?.message ?? '').trim();
-        const reaction: string = envelope.dataMessage?.reaction?.emoji ?? '';
+        // Support syncMessage (sent from own device) as well as dataMessage
+        const dataMsg = envelope.dataMessage ?? envelope.syncMessage?.sentMessage;
+        const text: string = (dataMsg?.message ?? '').trim();
+        const reaction: string = dataMsg?.reaction?.emoji ?? '';
 
-        this.logger.log(`Signal msg from=${sender || '(empty)'} number=${senderPhone || 'null'} uuid=${senderUuid || 'null'} text="${text.slice(0, 60)}" reaction="${reaction}"`);
+        this.logger.log(`Signal msg from=${sender || '(empty)'} number=${senderPhone || 'null'} uuid=${senderUuid || 'null'} text="${text.slice(0, 60)}" reaction="${reaction}" keys=${Object.keys(envelope).join(',')}`);
 
         if (!sender) continue;
 

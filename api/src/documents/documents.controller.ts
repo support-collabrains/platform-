@@ -12,4 +12,12 @@ export class DocumentsController {
     await this.service.onConsumed(body.documentId, body.owner, body.title);
     return { ok: true };
   }
+
+  @Post('signal-command')
+  async signalCommand(
+    @Body() body: { sender: string; text: string; timestamp?: number },
+  ): Promise<{ ok: boolean }> {
+    await this.service.handleSignalCommand(body.sender, body.text, body.timestamp);
+    return { ok: true };
+  }
 }

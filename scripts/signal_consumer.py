@@ -23,6 +23,8 @@ PAPERLESS_TOKEN = os.environ["PAPERLESS_API_TOKEN"]
 AUTHENTIK_URL = os.environ["AUTHENTIK_URL"]
 AUTHENTIK_TOKEN = os.environ["AUTHENTIK_BOOTSTRAP_TOKEN"]
 REDIS_URL = os.environ.get("QUEUE_REDIS_URL", "redis://queue-redis:6379")
+NESTJS_URL = os.environ.get("INTERNAL_API_URL", "http://api:3001")
+INTERNAL_SECRET = os.environ.get("INTERNAL_API_SECRET", "")
 
 PAPERLESS_HEADERS = {"Authorization": f"Token {PAPERLESS_TOKEN}"}
 AUTHENTIK_HEADERS = {"Authorization": f"Bearer {AUTHENTIK_TOKEN}"}
@@ -146,8 +148,17 @@ def process_message(envelope: dict, signal_tag_id: int):
     text = (data_msg.get("message") or "").strip()
     attachments = data_msg.get("attachments") or []
 
-    # Commando's (beginnen met /) zonder bijlagen: NestJS handelt dit af
+    # Commando's (beginnen met /) zonder bijlagen: doorsturen naar NestJS
     if text.startswith("/") and not attachments:
+        try:
+            requests.post(
+                f"{NESTJS_URL}/documents/signal-command",
+                json={"sender": source, "text": text, "timestamp": timestamp},
+                headers={"x-internal-secret": INTERNAL_SECRET},
+                timeout=10,
+            )
+        except Exception as e:
+            print(f"  Commando doorsturen mislukt: {e}", file=sys.stderr)
         return
 
     # Geen inhoud: overslaan
